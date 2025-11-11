@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  validator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bitads-v3-validator
+    restart: unless-stopped
+    # Baseline environment with defaults. Values from .env will override via ${VAR:-default}.
+    environment:
+      PYTHONUNBUFFERED: "1"
+      NETUID: "${NETUID:-368}"
+      SUBTENSOR_NETWORK: "${SUBTENSOR_NETWORK:-test}"
+      WALLET_NAME: "${WALLET_NAME:-default}"
+      WALLET_HOTKEY: "${WALLET_HOTKEY:-default}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
+    # Mount wallets so the container can access your Bittensor keys.
+    # Make sure you have your wallet files on the host in ./wallets
+    volumes:
+      - ~/.bittensor:/root/.bittensor
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  
