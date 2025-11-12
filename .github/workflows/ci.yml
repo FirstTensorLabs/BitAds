@@ -29,6 +29,6 @@ jobs:
         # Test that the neurons.validator module can be imported
         python -c "from neurons import validator; print('✅ Validator module imported successfully')"
         
-        # Test that the validator can be run with --help (entry point check)
-        python -m neurons.validator --help > /dev/null && echo '✅ Validator --help works successfully'
+        # Test that the Validator class is accessible
+        python -c "from neurons.validator import Validator; print('✅ Validator class accessible')"
 

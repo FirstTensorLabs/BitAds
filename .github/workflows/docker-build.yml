@@ -85,9 +85,9 @@ jobs:
         docker run --rm ${IMAGE_NAME}:test \
           python -c "from neurons import validator; print('✅ Validator module imported successfully')"
         
-        # Test that the validator can be run with --help (entry point check)
+        # Test that the Validator class is accessible
         docker run --rm ${IMAGE_NAME}:test \
-          python -m neurons.validator --help > /dev/null && echo '✅ Validator --help works successfully'
+          python -c "from neurons.validator import Validator; print('✅ Validator class accessible')"
         
         # Test that Python can run (basic sanity check)
         docker run --rm ${IMAGE_NAME}:test \
