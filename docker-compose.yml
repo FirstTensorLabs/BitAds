@@ -7,6 +7,8 @@ services:
       dockerfile: Dockerfile
     container_name: bitads-v3-validator
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     # Baseline environment with defaults. Values from .env will override via ${VAR:-default}.
     environment:
       PYTHONUNBUFFERED: "1"
@@ -25,5 +27,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_INCLUDE_STOPPED=false
+    # Only watch containers with the watchtower.enable label
+    command: --label-enable
 
   
