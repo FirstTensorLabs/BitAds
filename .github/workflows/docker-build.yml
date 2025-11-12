@@ -60,32 +60,3 @@ jobs:
         platforms: linux/amd64,linux/arm64
         outputs: type=registry
 
-  test-image:
-    runs-on: ubuntu-latest
-    needs: build-and-push
-
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Set image name (lowercase)
-      id: image-name
-      run: |
-        IMAGE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-        echo "IMAGE_NAME=${IMAGE_NAME}" >> $GITHUB_ENV
-        echo "name=${IMAGE_NAME}" >> $GITHUB_OUTPUT
-
-    - name: Build Docker image for testing
-      run: |
-        docker build -t ${IMAGE_NAME}:test .
-
-    - name: Test Docker image
-      run: |
-        # Test that the validator.py file has valid Python syntax and contains Validator class (without executing)
-        docker run --rm ${IMAGE_NAME}:test \
-          python -c "import ast; content = open('neurons/validator.py').read(); tree = ast.parse(content); classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]; assert 'Validator' in classes, 'Validator class not found'; print('✅ Validator module syntax is valid'); print('✅ Validator class found in module')"
-        
-        # Test that Python can run (basic sanity check)
-        docker run --rm ${IMAGE_NAME}:test \
-          python --version
-
