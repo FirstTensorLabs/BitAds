@@ -26,9 +26,6 @@ jobs:
 
     - name: Test imports
       run: |
-        # Test that the validator.py file has valid Python syntax
-        python -m py_compile neurons/validator.py && echo '✅ Validator module syntax is valid'
-        
-        # Test that the Validator class exists in the file (without executing module)
-        python -c "import ast; tree = ast.parse(open('neurons/validator.py').read()); classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]; assert 'Validator' in classes, 'Validator class not found'; print('✅ Validator class found in module')"
+        # Test that the validator.py file has valid Python syntax and contains Validator class (without executing)
+        python -c "import ast; content = open('neurons/validator.py').read(); tree = ast.parse(content); classes = [node.name for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]; assert 'Validator' in classes, 'Validator class not found'; print('✅ Validator module syntax is valid'); print('✅ Validator class found in module')"
 
