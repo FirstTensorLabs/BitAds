@@ -1,7 +1,7 @@
 from typing import Callable, Dict, List
 
 from bittensor.utils.btlogging import logging
-
+import bittensor as bt
 from bitads_v3_core.app.ports import IScoreSink
 from bitads_v3_core.domain.models import ScoreResult
 
@@ -14,9 +14,9 @@ class ValidatorScoreSink(IScoreSink):
 
     def __init__(
         self,
-        subtensor,
-        wallet,
-        metagraph,
+        subtensor: bt.Subtensor,
+        wallet: bt.Wallet,
+        metagraph: bt.Metagraph,
         netuid: int,
         tempo: int,
         mechid_resolver: Callable[[str], int],
@@ -47,6 +47,7 @@ class ValidatorScoreSink(IScoreSink):
 
         # Build weights aligned to metagraph.uids
         # Miners not in scores get 0.0 (no work = no score)
+        
         weights = [scores_by_uid.get(uid, 0.0) for uid in self.metagraph.uids]
         total = sum(weights)
         if total > 0:
@@ -54,7 +55,11 @@ class ValidatorScoreSink(IScoreSink):
         else:
             # All scores are 0: set all weights to 0 (no normalization possible)
             weights = [0.0] * len(weights)
-
+            # set the owner weight to 1.0 as fallback
+            owner_hotkey = self.subtensor.get_subnet_owner_hotkey(self.netuid)
+            index = self.metagraph.hotkeys.index(owner_hotkey)
+            weights[index] = 1.0
+        
         logging.info(f"[blue]Setting weights for {scope} (mechid={mechid}): {weights[:5]}...[/blue]")
         result = self.subtensor.set_weights(
             netuid=self.netuid,
