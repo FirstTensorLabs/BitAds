@@ -217,8 +217,8 @@ class Validator:
                     
                     # Update percentiles cache for next iteration
                     self.p95_provider.update_percentiles()
-                    # Record the block height at which we updated
-                    self.last_update = self.subtensor.block
+                    # Record the duration of blocks since the last update
+                    self.last_update = 0
                 else:
                     # Not time yet: sleep for requested duration
                     sleep_seconds = max(1, (self.tempo - self.last_update) * BLOCKTIME)
