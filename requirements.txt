@@ -1,2 +1,2 @@
 bittensor>=8.5.1
-bitads-v3-core>=0.1.0
+bitads-v3-core>=0.1.2

@@ -57,6 +57,21 @@ class Validator:
             # Fallback; validator.get_campaigns() maintains order, but resolver is simple here
             return 1
 
+        # burn_percentage resolver: returns burn percentage for a given scope
+        # TODO: Replace with actual external source when available
+        def burn_percentage_resolver(scope: str) -> Optional[float]:
+            """
+            Get burn percentage for a given scope.
+            
+            Args:
+                scope: Scope identifier (e.g., "network", "campaign:123")
+            
+            Returns:
+                Burn percentage (0.0-100.0) or None to disable burn
+            """
+            # For now, return None (no burn) - can be replaced with external source
+            return None
+
         self.score_sink = ValidatorScoreSink(
             subtensor=self.subtensor,
             wallet=self.wallet,
@@ -64,6 +79,7 @@ class Validator:
             netuid=self.config.netuid,
             tempo=self.tempo,
             mechid_resolver=mechid_resolver,
+            burn_percentage_resolver=burn_percentage_resolver,
         )
         self.score_calculator = ScoreCalculator(
             p95_provider=self.p95_provider,
