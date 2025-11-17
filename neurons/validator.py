@@ -240,6 +240,9 @@ class Validator:
                     sleep_seconds = max(1, (self.tempo - self.last_update) * BLOCKTIME)
                     logging.info(f"Not time to set weights yet. Sleeping for {sleep_seconds} seconds.")
                     time.sleep(sleep_seconds)
+                    self.last_update = self.subtensor.blocks_since_last_update(
+                        self.config.netuid, self.my_uid
+                    )
 
             except RuntimeError as e:   
                 logging.error(e)
