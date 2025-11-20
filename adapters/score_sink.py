@@ -166,6 +166,7 @@ class ValidatorScoreSink(IScoreSink):
             uids=self.metagraph.uids,
             weights=weights,
             mechid=mechid,
+            wait_for_inclusion=True,
         )
         logging.info(f"Set weights result for {scope}: {result}")
 
