@@ -66,44 +66,55 @@ class ValidatorBurnDataSource(IBurnDataSource):
     - Sales-to-emission ratio (from sales_emission_ratio API)
     """
     
-    def __init__(self, subtensor: bt.Subtensor, netuid: int, window_days_getter: Callable[[], int]):
+    def __init__(
+        self,
+        subtensor: bt.Subtensor,
+        netuid: int,
+        window_days_getter: Callable[[str], int],
+        sales_emission_ratio_getter: Callable[[str], Optional[float]],
+    ):
         """
         Initialize burn data source.
         
         Args:
             subtensor: Bittensor subtensor object for querying emission data
+            netuid: Subnet UID
+            window_days_getter: Callable that takes scope and returns window size in days
+            sales_emission_ratio_getter: Callable that takes scope and returns sales_emission_ratio
         """
         self.subtensor = subtensor
         self.netuid = netuid
         self.window_days_getter = window_days_getter
+        self.sales_emission_ratio_getter = sales_emission_ratio_getter
         
     def get_burn_data(self, scope: str) -> Optional[BurnCalculationData]:
         """
         Get burn calculation data for a given scope.
         
-        TODO: Implement actual data fetching:
-        1. Fetch emission_in_tao from subtensor/chain for the period
-        2. Fetch tao_price_usd from price oracle API
-        3. Fetch total_sales_usd from sales_emission_ratio API
-        4. Fetch sales_emission_ratio from sales_emission_ratio API
-        
-        For now, returns None (no burn).
+        Fetches all required data and returns a BurnCalculationData object if all
+        data is available, None otherwise.
         
         Args:
             scope: Scope identifier
         
         Returns:
-            BurnCalculationData if available, None otherwise
+            BurnCalculationData if all data is available, None otherwise
         """
         emission_in_tao = self._fetch_emission_in_tao(scope)
         tao_price_usd = self._fetch_tao_price_usd()
         total_sales_usd = self._fetch_total_sales_usd(scope)
         sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
 
-        if emission_in_tao is None or tao_price_usd is None or total_sales_usd is None or sales_emission_ratio is None:
+        # Return None if any required data is missing
+        if any(x is None for x in [emission_in_tao, tao_price_usd, total_sales_usd, sales_emission_ratio]):
             return None
 
-        return BurnCalculationData(emission_in_tao=emission_in_tao.tao, tao_price_usd=tao_price_usd, total_sales_usd=total_sales_usd, sales_emission_ratio=sales_emission_ratio)
+        return BurnCalculationData(
+            emission_in_tao=emission_in_tao.tao,
+            tao_price_usd=tao_price_usd,
+            total_sales_usd=total_sales_usd,
+            sales_emission_ratio=sales_emission_ratio,
+        )
 
     
     def _fetch_emission_in_tao(self, scope: str) -> Optional[bt.Balance]:
@@ -133,7 +144,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
                 logging.warning(f"Invalid SubnetTaoInEmission value: {subnet_tao_in_emission_value}")
                 return None
 
-            window_days = self.window_days_getter()
+            window_days = self.window_days_getter(scope)
 
             block_window = timedelta(days=window_days).total_seconds() // bt.BLOCKTIME
 
@@ -202,10 +213,9 @@ class ValidatorBurnDataSource(IBurnDataSource):
     
     def _fetch_sales_emission_ratio(self, scope: str) -> Optional[float]:
         """
-        Fetch sales-to-emission ratio target from sales_emission_ratio API.
+        Fetch sales-to-emission ratio target from external source.
         
-        TODO: Implement fetching from external API.
-        This should return the target ratio (e.g., 1.0 for 1:1, 1.5 for 1.5:1).
+        Uses the sales_emission_ratio_getter to fetch from external API.
         
         Args:
             scope: Scope identifier
@@ -213,6 +223,5 @@ class ValidatorBurnDataSource(IBurnDataSource):
         Returns:
             Sales-to-emission ratio, or None if unavailable
         """
-        # TODO: Implement
-        return 1.0
+        return self.sales_emission_ratio_getter(scope)
 

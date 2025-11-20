@@ -2,115 +2,113 @@ import argparse
 import os
 import time
 import traceback
-from typing import Dict, List, Optional, Tuple, Callable
+from typing import List
 
 from bittensor.core.config import Config
-from bittensor.core.dendrite import Dendrite
 from bittensor.core.settings import BLOCKTIME, NETWORKS
-from bittensor.core.subtensor import Subtensor
 from bittensor.utils.btlogging import logging
-from bittensor_wallet import Wallet
 
-from bitads_v3_core.app.ports import (
-    IConfigSource,
-    IMinerStatsSource,
-    IP95Provider,
-    IScoreSink,
-)
 from bitads_v3_core.app.scoring import ScoreCalculator
-from bitads_v3_core.domain.models import (
-    MinerWindowStats,
-    P95Config,
-    P95Mode,
-    Percentiles,
-    ScoreResult,
-)
+from bitads_v3_core.domain.models import ScoreResult
+
 from core.constants import NETUIDS
 from core.adapters.config_source import ValidatorConfigSource
 from core.adapters.miner_stats_source import ValidatorMinerStatsSource
 from core.adapters.p95_provider import ValidatorP95Provider
 from core.adapters.score_sink import ValidatorScoreSink
 from core.adapters.burn_data_source import ValidatorBurnDataSource
-from core.burn_calculator import get_burn_percentage_from_sales
+from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource
+from core.adapters.campaign_source import ValidatorCampaignSource, ICampaignSource
+from core.bittensor_factory import BittensorFactory
+from core.resolvers import MechIdResolver, BurnPercentageResolver, WindowDaysGetter
+from core.validator_config import ValidatorConfig
+from core.domain.campaign import Campaign
 
 
 class Validator:
-    def __init__(self):
-        self.config = self.get_config()
-        self.setup_logging()
-        self.setup_bittensor_objects()
-        self.my_uid = self.metagraph.hotkeys.index(self.wallet.hotkey.ss58_address)
+    """
+    Main validator class.
+    
+    Following Single Responsibility Principle - orchestrates validation workflow.
+    Following Dependency Inversion Principle - depends on abstractions (interfaces).
+    """
+    
+    def __init__(self, validator_config: ValidatorConfig = None):
+        """
+        Initialize validator.
+        
+        Args:
+            validator_config: Optional validator configuration. Uses defaults if not provided.
+        """
+        self.config = self._get_config()
+        self._setup_logging()
+        
+        # Create Bittensor objects using factory
+        bt_objects = BittensorFactory.create(self.config)
+        self.wallet = bt_objects.wallet
+        self.subtensor = bt_objects.subtensor
+        self.metagraph = bt_objects.metagraph
+        self.dendrite = bt_objects.dendrite
+        self.my_uid = bt_objects.my_uid
+        
+        # Initialize timing
         self.last_update = self.subtensor.blocks_since_last_update(
             self.config.netuid, self.my_uid
         )
         self.tempo = self.subtensor.tempo(self.config.netuid)
         
-        # Initialize bitads_v3_core interfaces
-        self.config_source = ValidatorConfigSource()
+        # Use provided config or defaults
+        if validator_config is None:
+            validator_config = ValidatorConfig()
+        
+        # Initialize core interfaces
+        self._initialize_core_components(validator_config)
+    
+    def _initialize_core_components(self, validator_config: ValidatorConfig):
+        """Initialize all core components following dependency injection."""
+        # Dynamic config source (for window_days, sales_emission_ratio, p95_config)
+        self.dynamic_config_source = ValidatorDynamicConfigSource()
+        
+        # Campaign source (for fetching campaigns with mech_ids)
+        self.campaign_source = ValidatorCampaignSource()
+        
+        # Config source (delegates to dynamic_config_source for P95)
+        self.config_source = ValidatorConfigSource(
+            dynamic_config_source=self.dynamic_config_source
+        )
         self.miner_stats_source = ValidatorMinerStatsSource()
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,
         )
-        # Window days getter: returns the window size in days for burn calculation
-        def window_days_getter() -> int:
-            # TODO: Make this configurable or fetch from external source
-            return 30  # Default 30-day window
         
+        # Window days getter (fetches from dynamic_config_source per scope)
+        window_days_getter = WindowDaysGetter(self.dynamic_config_source)
+        
+        # Sales emission ratio getter (fetches from dynamic_config_source per scope)
+        def sales_emission_ratio_getter(scope: str):
+            return self.dynamic_config_source.get_sales_emission_ratio(scope)
+        
+        # Burn data source
         self.burn_data_source = ValidatorBurnDataSource(
             subtensor=self.subtensor,
             netuid=self.config.netuid,
             window_days_getter=window_days_getter,
+            sales_emission_ratio_getter=sales_emission_ratio_getter,
         )
-        # mechid resolver: network -> 1, campaign order -> 2+
-        def mechid_resolver(scope: str) -> int:
-            if scope == "network":
-                return 0
-            # Fallback; validator.get_campaigns() maintains order, but resolver is simple here
-            return 1
-
-        # burn_percentage resolver: calculates burn percentage based on sales-to-emissions ratio
-        def burn_percentage_resolver(scope: str) -> Optional[float]:
-            """
-            Get burn percentage for a given scope based on sales-to-emissions ratio.
-            
-            The burn percentage is calculated to ensure miners don't become over-profitable
-            when emissions exceed the value they generate. When emissions are higher than
-            the value miners bring in, excess emissions are burned to maintain the target
-            profitability ratio.
-            
-            Calculation logic:
-            1. Get emission amount in TAO for the period
-            2. Get TAO/USD price and calculate emission_in_usd
-            3. Get total sales in USD from miners
-            4. Get target sales-to-emission ratio (e.g., 1.0 for 1:1, 1.5 for 1.5:1)
-            5. Calculate burn percentage:
-               - If emissions <= sales * ratio: burn = 0%
-               - Otherwise: burn = (emissions - sales * ratio) / emissions * 100%
-            
-            Args:
-                scope: Scope identifier (e.g., "network", "campaign:123")
-            
-            Returns:
-                Burn percentage (0.0-100.0) or None to disable burn
-            """
-            # Fetch burn calculation data from external sources
-            burn_data = self.burn_data_source.get_burn_data(scope)
-            
-            if burn_data is None:
-                # Data not available - disable burn
-                return None
-            
-            # Calculate burn percentage using the burn calculator
-            burn_percentage = get_burn_percentage_from_sales(
-                emission_in_tao=burn_data.emission_in_tao,
-                tao_price_usd=burn_data.tao_price_usd,
-                total_sales_usd=burn_data.total_sales_usd,
-                sales_emission_ratio=burn_data.sales_emission_ratio,
-            )
-            
-            return burn_percentage
-
+        
+        # Build mechid mapping from campaigns
+        campaigns = self.campaign_source.get_campaigns()
+        scope_to_mechid = {campaign.scope: campaign.mech_id for campaign in campaigns}
+        
+        # Resolvers
+        mechid_resolver = MechIdResolver(
+            scope_to_mechid=scope_to_mechid,
+            default_mechid=validator_config.campaign_mechid,
+        )
+        burn_percentage_resolver = BurnPercentageResolver(self.burn_data_source)
+        
+        # Score sink
         self.score_sink = ValidatorScoreSink(
             subtensor=self.subtensor,
             wallet=self.wallet,
@@ -120,28 +118,27 @@ class Validator:
             mechid_resolver=mechid_resolver,
             burn_percentage_resolver=burn_percentage_resolver,
         )
+        
+        # Score calculator
         self.score_calculator = ScoreCalculator(
             p95_provider=self.p95_provider,
-            use_soft_cap=False,  # Can be made configurable
-            use_flooring=False,  # Can be made configurable
+            use_soft_cap=validator_config.use_soft_cap,
+            use_flooring=validator_config.use_flooring,
         )
 
-    def get_config(self):
-        # Set up the configuration parser.
+    def _get_config(self) -> Config:
+        """Get Bittensor configuration."""
         parser = argparse.ArgumentParser()
-        # Adds override arguments for network and netuid.
         parser.add_argument(
             "--netuid", type=int, default=NETUIDS[NETWORKS[0]], help="The chain subnet uid."
         )
-        # Adds subtensor specific arguments.
+        from bittensor.core.subtensor import Subtensor
+        from bittensor_wallet import Wallet
         Subtensor.add_args(parser)
-        # Adds logging specific arguments.
         logging.add_args(parser)
-        # Adds wallet specific arguments.
         Wallet.add_args(parser)
-        # Parse the config.
+        
         config = Config(parser)
-        # Set up logging directory.
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid{}/validator".format(
                 config.logging.logging_dir,
@@ -150,67 +147,24 @@ class Validator:
                 config.netuid,
             )
         )
-        # Ensure the logging directory exists.
         os.makedirs(config.full_path, exist_ok=True)
         return config
 
-    def setup_logging(self):
-        # Set up logging.
+    def _setup_logging(self):
+        """Set up logging."""
         logging(config=self.config, logging_dir=self.config.full_path)
         logging.info(
-            f"Running validator for subnet: {self.config.netuid} on network: {self.config.subtensor.network} with config:"
+            f"Running validator for subnet: {self.config.netuid} "
+            f"on network: {self.config.subtensor.network}"
         )
-        logging.info(self.config)
-
-    def setup_bittensor_objects(self):
-        # Build Bittensor validator objects.
-        logging.info("Setting up Bittensor objects.")
-
-        # Initialize wallet.
-        self.wallet = Wallet(config=self.config)
-        logging.info(f"Wallet: {self.wallet}")
-
-        # Initialize subtensor.
-        self.subtensor = Subtensor(config=self.config)
-        logging.info(f"Subtensor: {self.subtensor}")
-
-        # Initialize dendrite.
-        self.dendrite = Dendrite(wallet=self.wallet)
-        logging.info(f"Dendrite: {self.dendrite}")
-
-        # Initialize metagraph.
-        self.metagraph = self.subtensor.metagraph(self.config.netuid)
-        logging.info(f"Metagraph: {self.metagraph}")
-
-        # Connect the validator to the network.
-        if self.wallet.hotkey.ss58_address not in self.metagraph.hotkeys:
-            logging.error(
-                f"Your validator: {self.wallet} is not registered to chain connection: {self.subtensor} \nRun 'btcli register' and try again."
-            )
-            exit()
-        else:
-            # Each validator gets a unique identity (UID) in the network.
-            self.my_subnet_uid = self.metagraph.hotkeys.index(
-                self.wallet.hotkey.ss58_address
-            )
-            logging.info(f"Running validator on uid: {self.my_subnet_uid}")
-
-        # Set up initial scoring weights for validation.
-        logging.info("Building validation weights.")
     
-    def get_campaigns(self) -> List[str]:
+    def get_campaigns(self) -> List[Campaign]:
         """
-        Get list of active campaigns.
+        Get list of active campaigns with their mechanism IDs.
         
-        TODO: Implement actual campaign fetching logic.
-        For now, returns network scope and placeholder campaigns.
+        Fetches campaigns from campaign_source, which loads them from external source.
         """
-        # Return network scope and example campaigns
-        # In production, fetch from your data source
-        campaigns = ["network", "local"]  # Network-level scoring
-        # TODO: Add actual campaign IDs from your system
-        # campaigns.extend([f"campaign:{cid}" for cid in active_campaign_ids])
-        return campaigns
+        return self.campaign_source.get_campaigns()
     
     def compute_scores_for_scope(self, scope: str) -> List[ScoreResult]:
         """
@@ -223,7 +177,8 @@ class Validator:
             List of ScoreResult entries
         """
         # Fetch miner statistics for this scope
-        miner_stats_list = self.miner_stats_source.fetch_window(scope)
+        window_days = self.burn_data_source.window_days_getter()
+        miner_stats_list = self.miner_stats_source.fetch_window(scope, window_days)
         
         if not miner_stats_list:
             logging.warning(f"No miner stats found for scope {scope}, using zero scores")
@@ -249,47 +204,49 @@ class Validator:
         self.score_sink.publish(score_results, scope)
 
     def run(self):
-        # The Main Validation Loop.
+        """Main validation loop."""
         logging.info("Starting validator loop.")
         while True:
             try:
-                # Sync metagraph and check whether it's time to set weights
-                self.metagraph.sync()
-
-                if self.last_update >= self.tempo:
-                    # Get list of active campaigns only when it's time to set weights
-                    campaigns = self.get_campaigns()
-                    logging.info(f"Processing {len(campaigns)} campaigns: {campaigns}")
-                    
-                    # Process each campaign (multiple set_weights calls, one per campaign)
-                    for scope in campaigns:
-                        try:
-                            self.set_weights_for_scope(scope)
-                        except Exception as e:
-                            logging.error(f"Error setting weights for {scope}: {e}")
-                            traceback.print_exc()
-                            continue
-                    
-                    # Update percentiles cache for next iteration
-                    self.p95_provider.update_percentiles()
-                    # Record the duration of blocks since the last update
-                    self.last_update = 0
-                else:
-                    # Not time yet: sleep for requested duration
-                    sleep_seconds = max(1, (self.tempo - self.last_update) * BLOCKTIME)
-                    logging.info(f"Not time to set weights yet. Sleeping for {sleep_seconds} seconds.")
-                    time.sleep(sleep_seconds)
-                    self.last_update = self.subtensor.blocks_since_last_update(
-                        self.config.netuid, self.my_uid
-                    )
-
-            except RuntimeError as e:   
-                logging.error(e)
+                self._sync_and_process()
+            except RuntimeError as e:
+                logging.error(f"Runtime error in validator loop: {e}")
                 traceback.print_exc()
-
             except KeyboardInterrupt:
                 logging.success("Keyboard interrupt detected. Exiting validator.")
-                exit()
+                break
+    
+    def _sync_and_process(self):
+        """Sync metagraph and process weights if needed."""
+        self.metagraph.sync()
+        
+        if self.last_update >= self.tempo:
+            self._process_weights()
+            self.p95_provider.update_percentiles()
+            self.last_update = 0
+        else:
+            self._sleep_until_next_update()
+    
+    def _process_weights(self):
+        """Process weights for all active campaigns."""
+        campaigns = self.get_campaigns()
+        logging.info(f"Processing {len(campaigns)} campaigns: {campaigns}")
+        
+        for campaign in campaigns:
+            try:
+                self.set_weights_for_scope(campaign.scope)
+            except Exception as e:
+                logging.error(f"Error setting weights for {campaign.scope}: {e}")
+                traceback.print_exc()
+    
+    def _sleep_until_next_update(self):
+        """Sleep until next weight update is due."""
+        sleep_seconds = max(1, (self.tempo - self.last_update) * BLOCKTIME)
+        logging.info(f"Not time to set weights yet. Sleeping for {sleep_seconds} seconds.")
+        time.sleep(sleep_seconds)
+        self.last_update = self.subtensor.blocks_since_last_update(
+            self.config.netuid, self.my_uid
+        )
 
 
 # Run the validator.
