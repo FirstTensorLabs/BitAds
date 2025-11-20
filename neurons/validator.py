@@ -177,7 +177,7 @@ class Validator:
             List of ScoreResult entries
         """
         # Fetch miner statistics for this scope
-        window_days = self.burn_data_source.window_days_getter()
+        window_days = self.burn_data_source.window_days_getter(scope)
         miner_stats_list = self.miner_stats_source.fetch_window(scope, window_days)
         
         if not miner_stats_list:
