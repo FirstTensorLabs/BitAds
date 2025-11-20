@@ -26,10 +26,12 @@ from bitads_v3_core.domain.models import (
     ScoreResult,
 )
 from core.constants import NETUIDS
-from adapters.config_source import ValidatorConfigSource
-from adapters.miner_stats_source import ValidatorMinerStatsSource
-from adapters.p95_provider import ValidatorP95Provider
-from adapters.score_sink import ValidatorScoreSink
+from core.adapters.config_source import ValidatorConfigSource
+from core.adapters.miner_stats_source import ValidatorMinerStatsSource
+from core.adapters.p95_provider import ValidatorP95Provider
+from core.adapters.score_sink import ValidatorScoreSink
+from core.adapters.burn_data_source import ValidatorBurnDataSource
+from core.burn_calculator import get_burn_percentage_from_sales
 
 
 class Validator:
@@ -50,6 +52,7 @@ class Validator:
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,
         )
+        self.burn_data_source = ValidatorBurnDataSource(subtensor=self.subtensor)
         # mechid resolver: network -> 1, campaign order -> 2+
         def mechid_resolver(scope: str) -> int:
             if scope == "network":
@@ -57,11 +60,24 @@ class Validator:
             # Fallback; validator.get_campaigns() maintains order, but resolver is simple here
             return 1
 
-        # burn_percentage resolver: returns burn percentage for a given scope
-        # TODO: Replace with actual external source when available
+        # burn_percentage resolver: calculates burn percentage based on sales-to-emissions ratio
         def burn_percentage_resolver(scope: str) -> Optional[float]:
             """
-            Get burn percentage for a given scope.
+            Get burn percentage for a given scope based on sales-to-emissions ratio.
+            
+            The burn percentage is calculated to ensure miners don't become over-profitable
+            when emissions exceed the value they generate. When emissions are higher than
+            the value miners bring in, excess emissions are burned to maintain the target
+            profitability ratio.
+            
+            Calculation logic:
+            1. Get emission amount in TAO for the period
+            2. Get TAO/USD price and calculate emission_in_usd
+            3. Get total sales in USD from miners
+            4. Get target sales-to-emission ratio (e.g., 1.0 for 1:1, 1.5 for 1.5:1)
+            5. Calculate burn percentage:
+               - If emissions <= sales * ratio: burn = 0%
+               - Otherwise: burn = (emissions - sales * ratio) / emissions * 100%
             
             Args:
                 scope: Scope identifier (e.g., "network", "campaign:123")
@@ -69,8 +85,22 @@ class Validator:
             Returns:
                 Burn percentage (0.0-100.0) or None to disable burn
             """
-            # For now, return None (no burn) - can be replaced with external source
-            return None
+            # Fetch burn calculation data from external sources
+            burn_data = self.burn_data_source.get_burn_data(scope)
+            
+            if burn_data is None:
+                # Data not available - disable burn
+                return None
+            
+            # Calculate burn percentage using the burn calculator
+            burn_percentage = get_burn_percentage_from_sales(
+                emission_in_tao=burn_data.emission_in_tao,
+                tao_price_usd=burn_data.tao_price_usd,
+                total_sales_usd=burn_data.total_sales_usd,
+                sales_emission_ratio=burn_data.sales_emission_ratio,
+            )
+            
+            return burn_percentage
 
         self.score_sink = ValidatorScoreSink(
             subtensor=self.subtensor,

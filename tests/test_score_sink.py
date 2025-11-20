@@ -6,7 +6,7 @@ from unittest.mock import Mock, MagicMock, patch
 from typing import List, Optional
 
 from bitads_v3_core.domain.models import ScoreResult
-from adapters.score_sink import ValidatorScoreSink
+from core.adapters.score_sink import ValidatorScoreSink
 
 
 TOLERANCE = 1e-9
