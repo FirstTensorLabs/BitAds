@@ -188,8 +188,8 @@ class Validator:
         
         if not miner_stats_list:
             logging.warning(f"No miner stats found for scope {scope}, using zero scores")
-            # Produce zero scores for all UIDs (miners with no work get 0)
-            return [ScoreResult(miner_id=str(uid), base=0.0, refund_multiplier=1.0, score=0.0) for uid in self.metagraph.uids]
+            # Produce zero scores for all hotkeys (miners with no work get 0)
+            return [ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0) for hotkey in self.metagraph.hotkeys]
         
         # Compute scores using ScoreCalculator
         score_results = self.score_calculator.score_many(miner_stats_list, scope)
