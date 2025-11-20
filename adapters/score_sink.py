@@ -232,7 +232,7 @@ class ValidatorScoreSink(IScoreSink):
                         f"Attempt [blue]{retries + 1}[/blue] of [green]{max_retries}[/green]."
                     )
                     success, message = set_mechanism_weights_extrinsic(
-                        subtensor=self,
+                        subtensor=self.subtensor,
                         wallet=wallet,
                         netuid=netuid,
                         mechid=mechid,
