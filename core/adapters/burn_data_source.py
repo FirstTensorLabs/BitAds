@@ -26,8 +26,7 @@ import requests
 from bittensor.utils.btlogging import logging
 import bittensor as bt
 
-
-MINER_EMISSION_PERCENT = 0.41
+from core.constants import MINER_EMISSION_PERCENT
 
 @dataclass
 class BurnCalculationData:

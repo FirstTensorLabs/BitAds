@@ -5,6 +5,7 @@ from bittensor.utils.btlogging import logging
 from bitads_v3_core.app.ports import IConfigSource
 from bitads_v3_core.domain.models import P95Config, P95Mode
 from core.adapters.dynamic_config_source import IDynamicConfigSource
+from core.constants import DEFAULT_P95_SALES, DEFAULT_P95_REVENUE_USD
 
 
 class ValidatorConfigSource(IConfigSource):
@@ -17,8 +18,8 @@ class ValidatorConfigSource(IConfigSource):
     def __init__(
         self,
         dynamic_config_source: Optional[IDynamicConfigSource] = None,
-        default_p95_sales: float = 60.0,
-        default_p95_revenue: float = 4000.0,
+        default_p95_sales: float = DEFAULT_P95_SALES,
+        default_p95_revenue: float = DEFAULT_P95_REVENUE_USD,
     ):
         """
         Initialize config source.

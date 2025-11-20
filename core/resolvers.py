@@ -9,6 +9,7 @@ from typing import Callable, Dict, Optional
 from core.adapters.burn_data_source import IBurnDataSource
 from core.adapters.dynamic_config_source import IDynamicConfigSource
 from core.burn_calculator import get_burn_percentage_from_sales
+from core.constants import DEFAULT_MECHID, DEFAULT_WINDOW_DAYS
 
 
 class MechIdResolver:
@@ -18,7 +19,7 @@ class MechIdResolver:
     Uses a mapping of scope -> mech_id loaded from campaigns.
     """
     
-    def __init__(self, scope_to_mechid: Dict[str, int], default_mechid: int = 0):
+    def __init__(self, scope_to_mechid: Dict[str, int], default_mechid: int = DEFAULT_MECHID):
         """
         Initialize mechid resolver.
         
@@ -115,8 +116,8 @@ class WindowDaysGetter:
             scope: Scope identifier
         
         Returns:
-            Window days (defaults to 30 if unavailable)
+            Window days (defaults to DEFAULT_WINDOW_DAYS if unavailable)
         """
         window_days = self.dynamic_config_source.get_window_days(scope)
-        return window_days if window_days is not None else 30
+        return window_days if window_days is not None else DEFAULT_WINDOW_DAYS
 

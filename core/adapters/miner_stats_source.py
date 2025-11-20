@@ -4,6 +4,7 @@ from bittensor.utils.btlogging import logging
 
 from bitads_v3_core.app.ports import IMinerStatsSource
 from bitads_v3_core.domain.models import MinerWindowStats
+from core.constants import DEFAULT_WINDOW_DAYS
 
 
 class ValidatorMinerStatsSource(IMinerStatsSource):
@@ -13,7 +14,7 @@ class ValidatorMinerStatsSource(IMinerStatsSource):
         # TODO: Initialize actual data source (API, database, etc.)
         pass
 
-    def fetch_window(self, scope: str, window_days: int = 30) -> List[Tuple[str, MinerWindowStats]]:
+    def fetch_window(self, scope: str, window_days: int = DEFAULT_WINDOW_DAYS) -> List[Tuple[str, MinerWindowStats]]:
         """
         Fetch miner statistics for a rolling window.
 

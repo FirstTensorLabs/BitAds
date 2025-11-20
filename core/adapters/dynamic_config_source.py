@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from bitads_v3_core.domain.models import P95Config
+from core.constants import DEFAULT_WINDOW_DAYS, DEFAULT_SALES_EMISSION_RATIO
 
 
 class IDynamicConfigSource(ABC):
@@ -77,7 +78,7 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         """
         # TODO: Implement fetching from external source
         # For now, return default
-        return 30
+        return DEFAULT_WINDOW_DAYS
     
     def get_sales_emission_ratio(self, scope: str) -> Optional[float]:
         """
@@ -93,7 +94,7 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         """
         # TODO: Implement fetching from external source
         # For now, return default
-        return 1.0
+        return DEFAULT_SALES_EMISSION_RATIO
     
     def get_p95_config(self, scope: str) -> Optional[P95Config]:
         """

@@ -1,16 +1,17 @@
 """
-Validator configuration and constants.
+Validator configuration.
 
 Following KISS principle - keep configuration simple and centralized.
 """
 from typing import Callable
 
-# Default configuration values
-DEFAULT_WINDOW_DAYS = 30
-DEFAULT_NETWORK_MECHID = 0
-DEFAULT_CAMPAIGN_MECHID = 1
-DEFAULT_USE_SOFT_CAP = False
-DEFAULT_USE_FLOORING = False
+from core.constants import (
+    DEFAULT_WINDOW_DAYS,
+    DEFAULT_NETWORK_MECHID,
+    DEFAULT_CAMPAIGN_MECHID,
+    DEFAULT_USE_SOFT_CAP,
+    DEFAULT_USE_FLOORING,
+)
 
 
 class ValidatorConfig:
