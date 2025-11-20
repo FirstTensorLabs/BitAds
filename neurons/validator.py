@@ -52,7 +52,16 @@ class Validator:
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,
         )
-        self.burn_data_source = ValidatorBurnDataSource(subtensor=self.subtensor)
+        # Window days getter: returns the window size in days for burn calculation
+        def window_days_getter() -> int:
+            # TODO: Make this configurable or fetch from external source
+            return 30  # Default 30-day window
+        
+        self.burn_data_source = ValidatorBurnDataSource(
+            subtensor=self.subtensor,
+            netuid=self.config.netuid,
+            window_days_getter=window_days_getter,
+        )
         # mechid resolver: network -> 1, campaign order -> 2+
         def mechid_resolver(scope: str) -> int:
             if scope == "network":

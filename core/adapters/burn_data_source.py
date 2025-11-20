@@ -14,14 +14,20 @@ much miners should earn relative to the sales they generate.
 
 TODO: Implement actual API calls in ValidatorBurnDataSource methods:
 - _fetch_emission_in_tao(): Calculate total TAO emissions for the subnet over the period
-- _fetch_tao_price_usd(): Fetch from price oracle (CoinGecko, CoinMarketCap, etc.)
+- _fetch_tao_price_usd(): ✅ Implemented - fetches from https://mainnet.scantensor.opentensor.ai/price
 - _fetch_total_sales_usd(): Fetch from sales_emission_ratio API
 - _fetch_sales_emission_ratio(): Fetch from sales_emission_ratio API
 """
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple
+from datetime import timedelta
+from typing import Callable, Optional, Tuple
 from dataclasses import dataclass
+import requests
+from bittensor.utils.btlogging import logging
+import bittensor as bt
 
+
+MINER_EMISSION_PERCENT = 0.41
 
 @dataclass
 class BurnCalculationData:
@@ -60,7 +66,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
     - Sales-to-emission ratio (from sales_emission_ratio API)
     """
     
-    def __init__(self, subtensor=None):
+    def __init__(self, subtensor: bt.Subtensor, netuid: int, window_days_getter: Callable[[], int]):
         """
         Initialize burn data source.
         
@@ -68,7 +74,9 @@ class ValidatorBurnDataSource(IBurnDataSource):
             subtensor: Bittensor subtensor object for querying emission data
         """
         self.subtensor = subtensor
-    
+        self.netuid = netuid
+        self.window_days_getter = window_days_getter
+        
     def get_burn_data(self, scope: str) -> Optional[BurnCalculationData]:
         """
         Get burn calculation data for a given scope.
@@ -87,52 +95,93 @@ class ValidatorBurnDataSource(IBurnDataSource):
         Returns:
             BurnCalculationData if available, None otherwise
         """
-        # TODO: Implement actual data fetching
-        # Example structure:
-        # emission_in_tao = self._fetch_emission_in_tao(scope)
-        # tao_price_usd = self._fetch_tao_price_usd()
-        # total_sales_usd = self._fetch_total_sales_usd(scope)
-        # sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
-        # 
-        # if all data is available:
-        #     return BurnCalculationData(
-        #         emission_in_tao=emission_in_tao,
-        #         tao_price_usd=tao_price_usd,
-        #         total_sales_usd=total_sales_usd,
-        #         sales_emission_ratio=sales_emission_ratio,
-        #     )
-        
-        return None
+        emission_in_tao = self._fetch_emission_in_tao(scope)
+        tao_price_usd = self._fetch_tao_price_usd()
+        total_sales_usd = self._fetch_total_sales_usd(scope)
+        sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
+
+        if emission_in_tao is None or tao_price_usd is None or total_sales_usd is None or sales_emission_ratio is None:
+            return None
+
+        return BurnCalculationData(emission_in_tao=emission_in_tao.tao, tao_price_usd=tao_price_usd, total_sales_usd=total_sales_usd, sales_emission_ratio=sales_emission_ratio)
+
     
-    def _fetch_emission_in_tao(self, scope: str) -> Optional[float]:
+    def _fetch_emission_in_tao(self, scope: str) -> Optional[bt.Balance]:
         """
         Fetch total emission amount in TAO for the period.
         
-        TODO: Implement fetching from subtensor/chain.
-        This should calculate the total TAO emissions for the subnet
-        over the relevant time period.
+        Queries blockEmission from the SubtensorModule storage.
+        Note: This returns the per-block emission. To get total emissions for a period,
+        you would need to multiply by the number of blocks in that period.
         
         Args:
             scope: Scope identifier
         
         Returns:
-            Emission amount in TAO, or None if unavailable
+            Emission amount in TAO per block, or None if unavailable
         """
-        # TODO: Implement
-        return None
+        try:
+            subnet_tao_in_emission = self.subtensor.query_subtensor("SubnetTaoInEmission", params=[self.netuid])
+
+            if subnet_tao_in_emission is None:
+                logging.warning("Failed to fetch SubnetTaoInEmission from subtensor")
+                return None
+
+            subnet_tao_in_emission_value = subnet_tao_in_emission.value if hasattr(subnet_tao_in_emission, 'value') else subnet_tao_in_emission
+
+            if not isinstance(subnet_tao_in_emission_value, (int, float)) or subnet_tao_in_emission_value <= 0:
+                logging.warning(f"Invalid SubnetTaoInEmission value: {subnet_tao_in_emission_value}")
+                return None
+
+            window_days = self.window_days_getter()
+
+            block_window = timedelta(days=window_days).total_seconds() // bt.BLOCKTIME
+
+            subnet_tao_in_emission_value = int(subnet_tao_in_emission_value * block_window * MINER_EMISSION_PERCENT)
+
+            subnet_tao_in_emission_value = bt.Balance.from_rao(subnet_tao_in_emission_value)
+
+            logging.info(f"Fetched SubnetTaoInEmission: {subnet_tao_in_emission_value} for {window_days} days")
+            return subnet_tao_in_emission_value
+            
+        except Exception as e:
+            logging.warning(f"Failed to fetch BlockEmission from subtensor: {e}")
+            return None
     
     def _fetch_tao_price_usd(self) -> Optional[float]:
         """
         Fetch TAO/USD price from price oracle.
         
-        TODO: Implement fetching from external price API/oracle.
-        Examples: CoinGecko, CoinMarketCap, or custom price oracle.
+        Fetches from https://mainnet.scantensor.opentensor.ai/price
         
         Returns:
             TAO price in USD, or None if unavailable
         """
-        # TODO: Implement
-        return None
+        try:
+            url = "https://mainnet.scantensor.opentensor.ai/price"
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            
+            data = response.json()
+            price = data.get("price")
+            
+            if price is None:
+                logging.warning("TAO price API returned data without 'price' field")
+                return None
+            
+            if not isinstance(price, (int, float)) or price <= 0:
+                logging.warning(f"Invalid TAO price value: {price}")
+                return None
+            
+            logging.info(f"Fetched TAO price: ${price:.2f} USD")
+            return float(price)
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Failed to fetch TAO price from API: {e}")
+            return None
+        except (ValueError, KeyError, TypeError) as e:
+            logging.warning(f"Failed to parse TAO price API response: {e}")
+            return None
     
     def _fetch_total_sales_usd(self, scope: str) -> Optional[float]:
         """
@@ -149,7 +198,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
             Total sales in USD, or None if unavailable
         """
         # TODO: Implement
-        return None
+        return 10000.0
     
     def _fetch_sales_emission_ratio(self, scope: str) -> Optional[float]:
         """
@@ -165,5 +214,5 @@ class ValidatorBurnDataSource(IBurnDataSource):
             Sales-to-emission ratio, or None if unavailable
         """
         # TODO: Implement
-        return None
+        return 1.0
 

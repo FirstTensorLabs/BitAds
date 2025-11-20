@@ -140,13 +140,13 @@ def calculate_emission_in_usd(
     """
     Calculate emission value in USD from TAO amount.
     
-    TODO: This function should fetch TAO/USD price from an external API
-    or price oracle. Currently it's a placeholder that accepts the price
-    as a parameter.
+    This is a pure calculation function that multiplies emission amount by price.
+    The TAO price should be fetched externally (e.g., via ValidatorBurnDataSource._fetch_tao_price_usd())
+    and passed as a parameter.
     
     Args:
         emission_in_tao: Total emission amount in TAO
-        tao_price_usd: TAO price in USD (should be fetched from external source)
+        tao_price_usd: TAO price in USD (fetched from external source)
     
     Returns:
         Emission value in USD
