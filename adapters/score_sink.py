@@ -1,5 +1,8 @@
 from typing import Callable, Dict, List, Optional
 
+from bittensor.core.settings import DEFAULT_PERIOD, version_as_int
+from bittensor.core.subtensor import commit_timelocked_mechanism_weights_extrinsic, set_mechanism_weights_extrinsic
+from bittensor.core.types import UIDs, Weights
 from bittensor.utils.btlogging import logging
 import bittensor as bt
 from bitads_v3_core.app.ports import IScoreSink
@@ -77,20 +80,31 @@ class ValidatorScoreSink(IScoreSink):
     def publish(self, scores: List[ScoreResult], scope: str) -> None:
         """
         Publish score results by setting weights on-chain for the given scope.
-        Assumes miner_id == UID string; fill missing with zero scores (no work = 0).
+        Assumes miner_id is a hotkey string; maps hotkeys to UIDs via metagraph.
+        Miners not in scores get 0.0 (no work = no score).
         Applies creator burn if burn_percentage is set.
         """
         mechid = self.mechid_resolver(scope)
         logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
 
         # Build UID->score map
+        # miner_id is a hotkey string, need to find corresponding UID
         scores_by_uid: Dict[int, float] = {}
         for result in scores:
             try:
-                uid = int(result.miner_id)
-                scores_by_uid[uid] = result.score
-            except ValueError:
-                logging.warning(f"Could not convert miner_id {result.miner_id} to UID for scope {scope}")
+                # miner_id is a hotkey string, find its UID in metagraph
+                if result.miner_id not in self.metagraph.hotkeys:
+                    logging.warning(f"Hotkey {result.miner_id} not found in metagraph for scope {scope}")
+                    continue
+                
+                hotkey_index = self.metagraph.hotkeys.index(result.miner_id)
+                if hotkey_index < len(self.metagraph.uids):
+                    uid = self.metagraph.uids[hotkey_index]
+                    scores_by_uid[uid] = result.score
+                else:
+                    logging.warning(f"Hotkey index {hotkey_index} out of range for UIDs in scope {scope}")
+            except (ValueError, AttributeError, IndexError) as e:
+                logging.warning(f"Could not map miner_id (hotkey) {result.miner_id} to UID for scope {scope}: {e}")
 
         # Build initial weights aligned to metagraph.uids
         # Miners not in scores get 0.0 (no work = no score)
@@ -102,9 +116,20 @@ class ValidatorScoreSink(IScoreSink):
         if self.burn_percentage_resolver is not None:
             burn_percentage = self.burn_percentage_resolver(scope)
         
+        # Calculate weights before burn (normalized)
+        total = sum(miner_scores)
+        if total > 0:
+            weights_before_burn = [s / total for s in miner_scores]
+        else:
+            weights_before_burn = [0.0] * len(uids)
+            self._set_owner_weight_fallback(weights_before_burn)
+        
         # Apply creator burn if enabled
         if burn_percentage is not None and burn_percentage > 0.0:
             try:
+                # Log weights before burn
+                logging.info(f"[yellow]Weights BEFORE burn ({burn_percentage}%) for scope {scope}:[/yellow] {weights_before_burn}")
+                
                 # Find owner UID externally
                 creator_uid = self._get_owner_uid()
                 final_uids, final_weights = apply_creator_burn(
@@ -119,36 +144,107 @@ class ValidatorScoreSink(IScoreSink):
                 weights_dict = dict(zip(final_uids, final_weights))
                 weights = [weights_dict.get(uid, 0.0) for uid in self.metagraph.uids]
                 
+                # If all weights are zero (all scores were zero), apply owner fallback
+                if sum(weights) == 0.0:
+                    self._set_owner_weight_fallback(weights)
+                
+                # Log weights after burn
+                logging.info(f"[green]Weights AFTER burn ({burn_percentage}%) for scope {scope}:[/green] {weights}")
                 logging.info(f"Applied creator burn: {burn_percentage}% for scope {scope}")
             except Exception as e:
                 logging.warning(f"Failed to apply creator burn for scope {scope}: {e}, falling back to normal weights")
-                # Fall back to normal normalization
-                total = sum(miner_scores)
-                if total > 0:
-                    weights = [s / total for s in miner_scores]
-                else:
-                    weights = [0.0] * len(uids)
-                    self._set_owner_weight_fallback(weights)
+                # Fall back to normal normalization (use weights_before_burn)
+                weights = weights_before_burn
         else:
-            # No burn: normalize weights normally
-            total = sum(miner_scores)
-            if total > 0:
-                weights = [s / total for s in miner_scores]
-            else:
-                # All scores are 0: set all weights to 0 (no normalization possible)
-                weights = [0.0] * len(uids)
-                self._set_owner_weight_fallback(weights)
+            # No burn: use weights_before_burn
+            weights = weights_before_burn
         
-        logging.info(f"[blue]Setting weights for {scope} (mechid={mechid}): {weights[:5]}...[/blue]")
-        result = self.subtensor.set_weights(
-            netuid=self.netuid,
+        logging.info(f"[blue]Setting weights for {scope} (mechid={mechid}):[/blue] {weights}")
+        result = self._set_weights(
             wallet=self.wallet,
+            netuid=self.netuid,
             uids=self.metagraph.uids,
             weights=weights,
-            wait_for_inclusion=True,
-            period=self.tempo,
             mechid=mechid,
         )
         logging.info(f"Set weights result for {scope}: {result}")
 
 
+    def _set_weights(self, 
+            wallet: bt.Wallet,
+            netuid: int,
+            uids: UIDs,
+            weights: Weights,
+            version_key: int = version_as_int,
+            wait_for_inclusion: bool = False,
+            wait_for_finalization: bool = False,
+            max_retries: int = 5,
+            block_time: float = 12.0,
+            period: Optional[int] = DEFAULT_PERIOD,
+            mechid: int = 0,
+            commit_reveal_version: int = 4,
+    ) -> tuple[bool, str]:
+        """
+        Set weights on-chain for the given scope.
+        """
+        retries = 0
+        success = False
+        message = "No attempt made. Perhaps it is too soon to commit weights!"
+        if (
+            uid := self.subtensor.get_uid_for_hotkey_on_subnet(wallet.hotkey.ss58_address, netuid)
+        ) is None:
+            return (
+                False,
+                f"Hotkey {wallet.hotkey.ss58_address} not registered in subnet {netuid}",
+            )
+
+        if self.subtensor.commit_reveal_enabled(netuid=netuid):
+            # go with `commit_timelocked_mechanism_weights_extrinsic` extrinsic
+
+            while retries < max_retries and success is False:
+                logging.info(
+                    f"Committing weights for subnet [blue]{netuid}[/blue]. "
+                    f"Attempt [blue]{retries + 1}[blue] of [green]{max_retries}[/green]."
+                )
+                success, message = commit_timelocked_mechanism_weights_extrinsic(
+                    subtensor=self.subtensor,
+                    wallet=wallet,
+                    netuid=netuid,
+                    mechid=mechid,
+                    uids=uids,
+                    weights=weights,
+                    version_key=version_key,
+                    wait_for_inclusion=wait_for_inclusion,
+                    wait_for_finalization=wait_for_finalization,
+                    block_time=block_time,
+                    period=period,
+                    commit_reveal_version=commit_reveal_version,
+                )
+                retries += 1
+            return success, message
+        else:
+            # go with `set_mechanism_weights_extrinsic`
+
+            while retries < max_retries and success is False:
+                try:
+                    logging.info(
+                        f"Setting weights for subnet [blue]{netuid}[/blue]. "
+                        f"Attempt [blue]{retries + 1}[/blue] of [green]{max_retries}[/green]."
+                    )
+                    success, message = set_mechanism_weights_extrinsic(
+                        subtensor=self,
+                        wallet=wallet,
+                        netuid=netuid,
+                        mechid=mechid,
+                        uids=uids,
+                        weights=weights,
+                        version_key=version_key,
+                        wait_for_inclusion=wait_for_inclusion,
+                        wait_for_finalization=wait_for_finalization,
+                        period=period,
+                    )
+                except Exception as e:
+                    logging.error(f"Error setting weights: {e}")
+                    retries += 1
+
+            return success, message
