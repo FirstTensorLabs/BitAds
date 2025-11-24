@@ -33,7 +33,7 @@ See [Mining Guide](docs/mining.md) for details.
 
 Validators collect miner performance data, calculate scores, and submit weights to the Bittensor network. The scoring algorithm evaluates miners using:
 
-1. **Refund Rate**: $\text{ref}_i = \min(1, \frac{\text{refund}\_\text{orders}_i}{\max(1, \text{sales}_i)})$
+1. **Refund Rate**: $\text{ref}_i = \min(1, \frac{{\text{refund}\_\text{orders}}_i}{\max(1, \text{sales}_i)})$
 2. **Sales Normalization**: Square root normalization against P95 percentile
 3. **Revenue Normalization**: Logarithmic normalization against P95 percentile
 4. **Base Score**: $40\%$ sales + $60\%$ revenue
@@ -59,7 +59,7 @@ This is outlier-resistant, easy to implement, and aligned with merchant value.
 - `refund_orders_i` (integer ≥ 0): number of refunded orders among the verified ones
 
 **Derived**:
-- $\text{ref}_i = \frac{\text{refund}\_\text{orders}_i}{\max(1, \text{sales}_i)}$ (refund rate in $[0,1]$)
+- $\text{ref}_i = \frac{{\text{refund}\_\text{orders}}_i}{\max(1, \text{sales}_i)}$ (refund rate in $[0,1]$)
 
 > **Note**: If `sales_i = 0`, the score will be 0 regardless of refunds, which is intended.
 
@@ -79,9 +79,9 @@ We compress extremes (many sales or huge revenue) to keep the score fair.
 
 Let $\varepsilon = 10^{-9}$ (to avoid division by zero) and define:
 
-$$\text{sales}\_\text{norm}_i = \min\left(1, \frac{\sqrt{\text{sales}_i}}{\max(\sqrt{P95_{\text{sales}}}, \varepsilon)}\right)$$
+$${\text{sales}\_\text{norm}}_i = \min\left(1, \frac{\sqrt{\text{sales}_i}}{\max(\sqrt{P95_{\text{sales}}}, \varepsilon)}\right)$$
 
-$$\text{rev}\_\text{norm}_i = \min\left(1, \frac{\ln(1 + \text{rev}_i)}{\max(\ln(1 + P95_{\text{rev}}), \varepsilon)}\right)$$
+$${\text{rev}\_\text{norm}}_i = \min\left(1, \frac{\ln(1 + \text{rev}_i)}{\max(\ln(1 + P95_{\text{rev}}), \varepsilon)}\right)$$
 
 - $\sqrt{\cdot}$ rewards volume while reducing dominance of very high counts
 - $\ln(1+\cdot)$ rewards revenue while compressing very large tickets
@@ -94,7 +94,7 @@ $$\text{rev}\_\text{norm}_i = \min\left(1, \frac{\ln(1 + \text{rev}_i)}{\max(\ln
 
 Compute the base (pre-refund) score:
 
-$$\text{base}_i = w_{\text{sales}} \times \text{sales}\_\text{norm}_i + w_{\text{rev}} \times \text{rev}\_\text{norm}_i$$
+$$\text{base}_i = w_{\text{sales}} \times {\text{sales}\_\text{norm}}_i + w_{\text{rev}} \times {\text{rev}\_\text{norm}}_i$$
 
 $\text{base}_i \in [0,1]$
 
@@ -104,13 +104,13 @@ Given your requirement: if 10% refunds, multiply score by 0.90.
 
 General rule:
 
-$$\text{refund}\_\text{multiplier}_i = 1 - \text{ref}_i \quad \text{(in } [0,1] \text{)}$$
+$${\text{refund}\_\text{multiplier}}_i = 1 - \text{ref}_i \quad \text{(in } [0,1] \text{)}$$
 
 **Example**: $\text{ref}_i = 0.25$ → multiplier = $0.75$ ($-25\%$ to score)
 
 ### Final Score (bounded)
 
-$$\text{score}_i = \text{base}_i \times \text{refund}\_\text{multiplier}_i$$
+$$\text{score}_i = \text{base}_i \times {\text{refund}\_\text{multiplier}}_i$$
 
 Result is guaranteed in $[0,1]$.
 
@@ -122,7 +122,7 @@ Result is guaranteed in $[0,1]$.
 - **Miner A** (last 30d):
   - $\text{sales}_i = 48$
   - $\text{rev}_i = 2,300$
-  - $\text{refund}\_\text{orders}_i = 6$ → $\text{ref}_i = \frac{6}{48} = 0.125$ → mult = $0.875$
+  - ${\text{refund}\_\text{orders}}_i = 6$ → $\text{ref}_i = \frac{6}{48} = 0.125$ → mult = $0.875$
 
 **Compute**:
 $$\text{sales}\_\text{norm} = \frac{\sqrt{48}}{\sqrt{60}} = \frac{6.928}{7.746} \approx 0.894$$
@@ -139,7 +139,7 @@ $$\text{score} = 0.918 \times 0.875 = 0.802$$
 - **Miner B**:
   - $\text{sales}_i = 10$
   - $\text{rev}_i = 3,000$
-  - $\text{refund}\_\text{orders}_i = 1$ → $\text{ref}_i = 0.10$ → mult = $0.90$
+  - ${\text{refund}\_\text{orders}}_i = 1$ → $\text{ref}_i = 0.10$ → mult = $0.90$
 
 $$\text{sales}\_\text{norm} = \frac{\sqrt{10}}{\sqrt{60}} = \frac{3.162}{7.746} \approx 0.408$$
 
@@ -153,7 +153,7 @@ A wins on volume and slightly better refund rate; B is very strong on revenue.
 
 #### Example C (no sales)
 
-- **Miner C**: $\text{sales}_i = 0$, $\text{rev}_i = 0$, $\text{refund}\_\text{orders}_i = 0$ → $\text{score} = 0$
+- **Miner C**: $\text{sales}_i = 0$, $\text{rev}_i = 0$, ${\text{refund}\_\text{orders}}_i = 0$ → $\text{score} = 0$
 
 ### Edge Cases & Guardrails
 
@@ -166,7 +166,7 @@ A wins on volume and slightly better refund rate; B is very strong on revenue.
   ```
   (Not required by the spec, but commonly used.)
 
-- **Refunds > sales** (data noise): Clamp: $\text{ref}_i = \min(1, \frac{\text{refund}\_\text{orders}_i}{\max(1, \text{sales}_i)})$.
+- **Refunds > sales** (data noise): Clamp: $\text{ref}_i = \min(1, \frac{{\text{refund}\_\text{orders}}_i}{\max(1, \text{sales}_i)})$.
 
 - **Campaign vs. global P95**: Preferred: compute per-campaign P95 to keep things fair across low-ticket vs high-ticket campaigns. For a global leaderboard, average per-campaign scores with weights = campaign budget or impressions.
 
@@ -211,7 +211,7 @@ The burn mechanism automatically calculates and applies a burn percentage based 
 
 ### Formula
 
-$$\text{burn}\_\text{percentage} = \max\left(0, \frac{\text{emission}\_\text{usd} - \text{sales}\_\text{usd} \times \text{target}\_\text{ratio}}{\text{emission}\_\text{usd}} \times 100\right)$$
+$$\text{burn}\_\text{percentage} = \max\left(0, \frac{{\text{emission}\_\text{usd}} - {\text{sales}\_\text{usd}} \times {\text{target}\_\text{ratio}}}{{\text{emission}\_\text{usd}}} \times 100\right)$$
 
 The result is clamped to $[0.0, 100.0]\%$.
 
