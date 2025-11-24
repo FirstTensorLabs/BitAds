@@ -2,6 +2,7 @@ version: "3.9"
 
 services:
   validator:
+    image: ghcr.io/bitads/bitads-v3-validator:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -10,6 +11,7 @@ services:
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
     # Baseline environment with defaults. Values from .env will override via ${VAR:-default}.
+    # Defaults: NETUID=368 (testnet), use NETUID=16 for mainnet (finney)
     environment:
       PYTHONUNBUFFERED: "1"
       NETUID: "${NETUID:-368}"

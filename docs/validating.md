@@ -1,0 +1,328 @@
+# Validating Guide
+
+Welcome! This guide will help you set up and run a BitAds V3 validator. Validators play a crucial role in the network by evaluating miner performance and distributing rewards.
+
+## What Does a Validator Do?
+
+As a validator, you'll:
+- **Collect data**: Gather miner performance metrics (sales, revenue, refunds)
+- **Calculate scores**: Use the scoring algorithm to evaluate each miner
+- **Submit weights**: Send calculated scores to the Bittensor network
+- **Distribute rewards**: Help ensure miners are rewarded fairly based on performance
+
+## 🟢 Quick Start: Docker Setup (Recommended)
+
+The easiest way to run a validator is using Docker Compose. This method handles updates automatically and is the recommended approach.
+
+### Step 1: Create a Directory
+
+Create a new folder for your validator:
+
+```sh
+mkdir BitAds-V3
+cd BitAds-V3
+```
+
+### Step 2: Get the Configuration File
+
+Download the `docker-compose.yml` file:
+
+```sh
+curl -L -o docker-compose.yml https://raw.githubusercontent.com/YOUR_ORG/bitads-v3/main/bitads_v3_validator/docker-compose.yml
+```
+
+**Alternative**: If you prefer to clone the repository:
+
+```sh
+git clone https://github.com/YOUR_ORG/bitads-v3.git
+cd bitads-v3/bitads_v3_validator
+```
+
+### Step 3: Start the Validator
+
+Start the validator in the background:
+
+```sh
+docker compose up -d
+```
+
+> ⚠️ **Important**: By default, the validator uses wallet name `default` and hotkey `default`. You should configure your own wallet for security. See the [Wallet Customization](#-wallet-customization) section below.
+
+### Step 4: Check Status
+
+View the validator logs to make sure everything is running:
+
+```sh
+docker compose logs -f validator
+```
+
+You should see logs showing the validator syncing with the network and processing campaigns.
+
+---
+
+## 🖥️ Hardware Requirements
+
+Make sure your server meets these specifications:
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| **CPU** | 1 core @ 2.6 GHz | 2 cores @ 2.6 GHz |
+| **RAM** | 2 GB | 4 GB |
+
+### Supported Platforms
+
+| Platform | Status | Examples |
+|----------|--------|----------|
+| ARM64 | ✅ Supported | Apple Silicon, Ampere® |
+| x86/x86_64 | ✅ Supported | Intel, AMD processors |
+
+---
+
+## 🛑 Running Without Docker (Advanced)
+
+> 💡 **Note**: Docker is recommended because it handles automatic updates. Only use this method if you have a specific need to run outside Docker.
+
+> ⚠️ **Important**: When running manually (without Docker), the `.env` file configuration does not work. You must pass all parameters via command-line arguments.
+
+If you need to run the validator directly on your system:
+
+### Step 1: Install Dependencies
+
+```sh
+git clone https://github.com/YOUR_ORG/bitads-v3.git
+cd bitads-v3/bitads_v3_validator
+
+# Create a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install required packages
+pip install -r requirements.txt
+```
+
+### Step 2: Run the Validator
+
+Choose the command based on which network you want to use:
+
+| Network | NETUID | Network Name | Use Case |
+|---------|--------|--------------|----------|
+| **Mainnet** | 16 | `finney` | Production use |
+| **Testnet** | 368 | `test` | Testing and development |
+
+**For Mainnet (Production)**:
+```sh
+python neurons/validator.py \
+  --netuid 16 \
+  --subtensor.network finney \
+  --wallet.name <YOUR_WALLET_NAME> \
+  --wallet.hotkey <YOUR_HOTKEY>
+```
+
+**For Testnet (Testing)**:
+```sh
+python neurons/validator.py \
+  --netuid 368 \
+  --subtensor.network test \
+  --wallet.name <YOUR_WALLET_NAME> \
+  --wallet.hotkey <YOUR_HOTKEY>
+```
+
+Replace `<YOUR_WALLET_NAME>` and `<YOUR_HOTKEY>` with your actual Bittensor wallet credentials.
+
+---
+
+## ⚙️ Wallet Customization
+
+You need to configure your Bittensor wallet for the validator to work. Here are two easy ways to do it:
+
+> ⚠️ **Note**: The `.env` file method only works with Docker Compose. If you're running the validator manually, you must use command-line arguments (see Method 2).
+
+### Method 1: Using a `.env` File (Docker Only)
+
+This is the recommended method for Docker users because your settings are saved and easy to manage.
+
+1. **Copy the example file**:
+   ```sh
+   cp env.example .env
+   ```
+
+2. **Edit the `.env` file** with your favorite text editor:
+
+   | Variable | Mainnet Value | Testnet Value | Description |
+   |----------|---------------|---------------|-------------|
+   | `NETUID` | `16` | `368` | Subnet identifier |
+   | `SUBTENSOR_NETWORK` | `finney` | `test` | Network name |
+   | `WALLET_NAME` | `my_wallet` | `my_wallet` | Your wallet name |
+   | `WALLET_HOTKEY` | `my_hotkey` | `my_hotkey` | Your hotkey name |
+   | `LOGGING_LEVEL` | `info` | `info` | Log verbosity |
+
+   Example `.env` file for mainnet:
+   ```env
+   NETUID=16
+   SUBTENSOR_NETWORK=finney
+   WALLET_NAME=my_wallet
+   WALLET_HOTKEY=my_hotkey
+   LOGGING_LEVEL=info
+   ```
+
+   Replace `my_wallet` and `my_hotkey` with your actual wallet name and hotkey.
+
+3. **Start the validator**:
+   ```sh
+   docker compose up -d
+   ```
+
+   The validator will automatically use the settings from your `.env` file.
+
+### Method 2: Command Line Arguments
+
+#### For Docker Users
+
+You can set variables directly when starting Docker (alternative to `.env` file):
+
+**For Mainnet**:
+```sh
+WALLET_NAME=my_wallet \
+WALLET_HOTKEY=my_hotkey \
+NETUID=16 \
+SUBTENSOR_NETWORK=finney \
+docker compose up -d
+```
+
+**For Testnet**:
+```sh
+WALLET_NAME=my_wallet \
+WALLET_HOTKEY=my_hotkey \
+NETUID=368 \
+SUBTENSOR_NETWORK=test \
+docker compose up -d
+```
+
+#### For Manual Startup
+
+> ⚠️ **Important**: When running manually, `.env` files are not used. You must pass all parameters via command-line arguments.
+
+**For Mainnet**:
+```sh
+python neurons/validator.py \
+  --netuid 16 \
+  --subtensor.network finney \
+  --wallet.name my_wallet \
+  --wallet.hotkey my_hotkey
+```
+
+**For Testnet**:
+```sh
+python neurons/validator.py \
+  --netuid 368 \
+  --subtensor.network test \
+  --wallet.name my_wallet \
+  --wallet.hotkey my_hotkey
+```
+
+> 💡 **Tip**: For Docker users, Method 1 (`.env` file) is easier to manage and less error-prone.
+
+---
+
+## How the Validator Works
+
+### The Validation Cycle
+
+Once running, your validator continuously:
+
+1. **Syncs with the network**: Connects to Bittensor and gets the latest state
+2. **Checks timing**: Determines when it's time to update weights (based on subnet tempo)
+3. **Processes campaigns**: For each active campaign:
+   - Fetches miner statistics (sales, revenue, refunds)
+   - Calculates P95 percentiles for normalization
+   - Computes scores for all miners
+   - Submits weights to the Bittensor network
+4. **Updates metrics**: Refreshes percentile calculations after each cycle
+5. **Waits**: Sleeps until the next update cycle
+
+### Weight Distribution
+
+When submitting weights:
+- A percentage is burned (sent to UID 0, the subnet owner)
+- The remaining percentage is distributed to miners based on their scores
+- Higher scores = higher weights = more rewards
+
+---
+
+## 📊 Monitoring Your Validator
+
+### Viewing Logs
+
+Check what your validator is doing in real-time:
+
+```sh
+docker compose logs -f validator
+```
+
+Press `Ctrl+C` to exit the log viewer.
+
+### Log File Location
+
+Logs are also saved to your local filesystem:
+```
+~/.bittensor/wallets/{wallet_name}/{hotkey}/netuid{netuid}/validator/
+```
+
+### What to Monitor
+
+Keep an eye on these metrics:
+
+| Metric | Description | What to Look For |
+|--------|-------------|------------------|
+| **Campaigns processed** | Number of campaigns handled | Should match active campaigns |
+| **Miners scored** | How many miners received scores | Should include all active miners |
+| **Weight submissions** | Success rate of weight updates | Should be 100% or close to it |
+| **Errors** | Any issues that need attention | Should be minimal or zero |
+| **P95 values** | Current percentile thresholds | Should update regularly |
+
+---
+
+## 🔧 Troubleshooting
+
+| Problem | Symptoms | Solutions |
+|---------|----------|-----------|
+| **No Miner Statistics Found** | Warnings about empty miner stats | • Check data source accessibility<br>• Verify campaign configuration<br>• Ensure statistics API is responding<br>• Check network connection |
+| **Weight Submission Fails** | Errors when submitting weights | • Verify wallet has enough TAO<br>• Check internet connection stability<br>• Verify mechanism ID (mech_id) configuration<br>• Confirm Bittensor network status |
+| **Can't Connect to Network** | Connection errors to Subtensor or data sources | • Test internet connection<br>• Verify RPC endpoints are reachable<br>• Check firewall rules<br>• Review network configuration |
+
+---
+
+## 💡 Best Practices
+
+| Category | Practice | Why It Matters |
+|----------|----------|----------------|
+| **Keep It Running** | Monitor logs daily | Catch issues early before they become problems |
+| | Set up alerts | Get notified immediately if validator stops |
+| | Track metrics over time | Understand performance trends |
+| **Stay Updated** | Use Docker (automatic updates) | Watchtower handles updates seamlessly |
+| | Test on testnet first | Verify updates work before mainnet |
+| | Read changelogs | Know what changed before updating |
+| **Protect Your Setup** | Backup wallet files | Prevent loss of access |
+| | Save configuration | Easy to restore or migrate |
+| | Test recovery procedures | Ensure backups actually work |
+
+---
+
+## 📚 Additional Resources
+
+- **Scoring Details**: Check the [Core Library documentation](https://pypi.org/project/bitads-v3-core/) for algorithm details
+- **Mining Guide**: Learn about [mining](mining.md) in the BitAds network
+- **Community Support**: Reach out to the community if you need help
+
+---
+
+## 🎯 Next Steps
+
+Now that your validator is running:
+
+1. ✅ Monitor the logs to ensure everything is working
+2. ✅ Set up alerts for critical issues
+3. ✅ Review the [mining guide](mining.md) to understand how miners are scored
+4. ✅ Join the community to share experiences and get help
+
+Happy validating! 🚀
