@@ -10,6 +10,24 @@ As a validator, you'll:
 - **Submit weights**: Send calculated scores to the Bittensor network
 - **Distribute rewards**: Help ensure miners are rewarded fairly based on performance
 
+## Prerequisites
+
+### Register Your Hotkey on the Subnet
+
+Before you can start validating, you must register your hotkey on the BitAds V3 subnet using the Bittensor CLI:
+
+**For Mainnet (finney)**:
+```sh
+btcli subnet register --netuid 16
+```
+
+**For Testnet (test)**:
+```sh
+btcli subnet register --netuid 368
+```
+
+This command will register your hotkey on the subnet, allowing you to participate as a validator. Make sure you have sufficient TAO in your wallet to cover the registration fee.
+
 ## 🟢 Quick Start: Docker Setup (Recommended)
 
 The easiest way to run a validator is using Docker Compose. This method handles updates automatically and is the recommended approach.

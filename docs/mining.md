@@ -10,6 +10,24 @@ Mining in BitAds V3 involves providing ad campaign services on the Bittensor net
 - **Revenue**: Total revenue generated in USD
 - **Refunds**: Number of refund orders (lower is better)
 
+## Prerequisites
+
+### Register Your Hotkey on the Subnet
+
+Before you can start mining, you must register your hotkey on the BitAds V3 subnet using the Bittensor CLI:
+
+**For Mainnet (finney)**:
+```sh
+btcli subnet register --netuid 16
+```
+
+**For Testnet (test)**:
+```sh
+btcli subnet register --netuid 368
+```
+
+This command will register your hotkey on the subnet, allowing you to participate and receive rewards. Make sure you have sufficient TAO in your wallet to cover the registration fee.
+
 ## How Scoring Works
 
 Your score is calculated by validators using the following algorithm:
@@ -171,7 +189,7 @@ Weights are distributed based on scores:
 
 ## Getting Help
 
-- Review the [Core Library README](../../bitads_v3_core/README.md) for detailed scoring formulas
+- Review the [Core Library documentation](https://pypi.org/project/bitads-v3-core/) for detailed scoring formulas
 - Check validator logs for scoring information
 - Contact the community for support
 
