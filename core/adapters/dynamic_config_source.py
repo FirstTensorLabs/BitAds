@@ -5,51 +5,78 @@ This module provides interfaces for fetching configuration that may change
 at runtime, such as window_days, sales_emission_ratio, and P95 config.
 """
 from abc import ABC, abstractmethod
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Dict, Tuple
+import os
+import time
+import requests
+from bittensor.utils.btlogging import logging
 
-from bitads_v3_core.domain.models import P95Config
-from core.constants import DEFAULT_WINDOW_DAYS, DEFAULT_SALES_EMISSION_RATIO
+from bitads_v3_core.domain.models import P95Config, P95Mode
+from core.constants import (
+    DEFAULT_WINDOW_DAYS, 
+    DEFAULT_SALES_EMISSION_RATIO, 
+    DEFAULT_USE_SOFT_CAP,
+    DEFAULT_USE_FLOORING,
+    DEFAULT_W_SALES,
+    DEFAULT_W_REV,
+    DEFAULT_SOFT_CAP_THRESHOLD,
+    DEFAULT_SOFT_CAP_FACTOR,
+)
+
+
+@dataclass
+class DynamicConfig:
+    """Complete dynamic configuration for a scope."""
+    window_days: int
+    sales_emission_ratio: float
+    p95_config: P95Config
+    use_soft_cap: bool
+    use_flooring: bool
+    w_sales: float
+    w_rev: float
+    soft_cap_threshold: int
+    soft_cap_factor: float
+
+
+def get_default_config(scope: str) -> DynamicConfig:
+    """
+    Get default DynamicConfig for a scope.
+    
+    Args:
+        scope: Scope identifier
+        
+    Returns:
+        DynamicConfig with default values
+    """
+    from bitads_v3_core.domain.models import P95Config, P95Mode
+    
+    return DynamicConfig(
+        window_days=DEFAULT_WINDOW_DAYS,
+        sales_emission_ratio=DEFAULT_SALES_EMISSION_RATIO,
+        p95_config=P95Config(mode=P95Mode.AUTO, ema_alpha=0.1, scope=scope),
+        use_soft_cap=DEFAULT_USE_SOFT_CAP,
+        use_flooring=DEFAULT_USE_FLOORING,
+        w_sales=DEFAULT_W_SALES,
+        w_rev=DEFAULT_W_REV,
+        soft_cap_threshold=DEFAULT_SOFT_CAP_THRESHOLD,
+        soft_cap_factor=DEFAULT_SOFT_CAP_FACTOR,
+    )
 
 
 class IDynamicConfigSource(ABC):
     """Interface for fetching dynamic configuration per scope."""
     
     @abstractmethod
-    def get_window_days(self, scope: str) -> Optional[int]:
+    def get_config(self, scope: str) -> Optional[DynamicConfig]:
         """
-        Get window days for a given scope.
+        Get complete dynamic configuration for a given scope.
         
         Args:
             scope: Scope identifier (e.g., "network", "campaign:123")
         
         Returns:
-            Window days, or None if unavailable
-        """
-        pass
-    
-    @abstractmethod
-    def get_sales_emission_ratio(self, scope: str) -> Optional[float]:
-        """
-        Get sales-to-emission ratio for a given scope.
-        
-        Args:
-            scope: Scope identifier
-        
-        Returns:
-            Sales-to-emission ratio (e.g., 1.0 for 1:1, 1.5 for 1.5:1), or None if unavailable
-        """
-        pass
-    
-    @abstractmethod
-    def get_p95_config(self, scope: str) -> Optional[P95Config]:
-        """
-        Get full P95 configuration for a given scope.
-        
-        Args:
-            scope: Scope identifier
-        
-        Returns:
-            P95Config, or None if unavailable
+            DynamicConfig with all configuration values, or None if unavailable
         """
         pass
 
@@ -58,59 +85,111 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
     """
     Implementation of dynamic config source.
     
-    TODO: Implement actual API calls to fetch:
-    - window_days from external source
-    - sales_emission_ratio from external source
-    - full P95 config from external source
+    Fetches configuration from the mock API /config endpoint.
+    Uses caching to prevent API spam (5 minute default TTL).
     """
     
-    def get_window_days(self, scope: str) -> Optional[int]:
+    def __init__(self, api_base_url: str = None, cache_ttl: int = 300):
         """
-        Get window days for a given scope.
-        
-        TODO: Implement fetching from external API.
+        Initialize dynamic config source.
         
         Args:
-            scope: Scope identifier
+            api_base_url: Base URL for the API. If not provided, must be set via API_BASE_URL env var.
+            cache_ttl: Cache time-to-live in seconds. Defaults to 300 (5 minutes).
         
-        Returns:
-            Window days, or None if unavailable
+        Raises:
+            ValueError: If API_BASE_URL is not provided and not set in environment.
         """
-        # TODO: Implement fetching from external source
-        # For now, return default
-        return DEFAULT_WINDOW_DAYS
+        self.api_base_url = api_base_url or os.getenv("API_BASE_URL")
+        if not self.api_base_url:
+            raise ValueError("API_BASE_URL must be set as environment variable or passed as parameter")
+        self.cache_ttl = cache_ttl
+        # Cache structure: {scope: (config_data, timestamp)}
+        self._cache: Dict[str, Tuple[dict, float]] = {}
     
-    def get_sales_emission_ratio(self, scope: str) -> Optional[float]:
+    def _fetch_config_raw(self, scope: str) -> Optional[dict]:
         """
-        Get sales-to-emission ratio for a given scope.
+        Fetch config from API for a given scope.
         
-        TODO: Implement fetching from external API.
+        Uses caching to prevent API spam. Returns cached data if available and still valid.
         
         Args:
             scope: Scope identifier
         
         Returns:
-            Sales-to-emission ratio, or None if unavailable
+            Config dictionary, or None if unavailable
         """
-        # TODO: Implement fetching from external source
-        # For now, return default
-        return DEFAULT_SALES_EMISSION_RATIO
+        current_time = time.time()
+        
+        # Check cache first
+        if scope in self._cache:
+            cached_data, cache_timestamp = self._cache[scope]
+            if current_time - cache_timestamp < self.cache_ttl:
+                logging.debug(f"Using cached config for scope {scope}")
+                return cached_data
+            else:
+                # Cache expired, remove it
+                del self._cache[scope]
+        
+        # Fetch from API
+        try:
+            url = f"{self.api_base_url}/config"
+            response = requests.get(url, params={"scope": scope}, timeout=10)
+            response.raise_for_status()
+            config_data = response.json()
+            
+            # Store in cache
+            self._cache[scope] = (config_data, current_time)
+            logging.debug(f"Fetched and cached config for scope {scope}")
+            return config_data
+            
+        except requests.exceptions.RequestException as e:
+            logging.warning(f"Failed to fetch config from API for scope {scope}: {e}")
+            return None
+        except (ValueError, KeyError, TypeError) as e:
+            logging.warning(f"Failed to parse config API response for scope {scope}: {e}")
+            return None
     
-    def get_p95_config(self, scope: str) -> Optional[P95Config]:
+    def get_config(self, scope: str) -> Optional[DynamicConfig]:
         """
-        Get full P95 configuration for a given scope.
-        
-        TODO: Implement fetching from external API.
-        This should return the complete P95Config with all parameters.
+        Get complete dynamic configuration for a given scope.
         
         Args:
             scope: Scope identifier
         
         Returns:
-            P95Config, or None if unavailable
+            DynamicConfig with all configuration values, or None if unavailable
         """
-        # TODO: Implement fetching from external source
-        # For now, delegate to the existing config source logic
-        # This should be replaced with external API call
+        config_data = self._fetch_config_raw(scope)
+        if config_data is None:
+            return None
+        
+        try:
+            # Parse P95 config
+            p95_config_data = config_data.get("p95_config", {})
+            mode_str = p95_config_data.get("mode", "auto")
+            mode = P95Mode.MANUAL if mode_str == "manual" else P95Mode.AUTO
+            
+            p95_config = P95Config(
+                mode=mode,
+                manual_p95_sales=p95_config_data.get("manual_p95_sales"),
+                manual_p95_revenue_usd=p95_config_data.get("manual_p95_revenue_usd"),
+                ema_alpha=p95_config_data.get("ema_alpha"),
+                scope=scope
+            )
+            
+            return DynamicConfig(
+                window_days=config_data.get("window_days", DEFAULT_WINDOW_DAYS),
+                sales_emission_ratio=config_data.get("sales_emission_ratio", DEFAULT_SALES_EMISSION_RATIO),
+                p95_config=p95_config,
+                use_soft_cap=p95_config_data.get("use_soft_cap", DEFAULT_USE_SOFT_CAP),
+                use_flooring=p95_config_data.get("use_flooring", DEFAULT_USE_FLOORING),
+                w_sales=p95_config_data.get("w_sales", DEFAULT_W_SALES),
+                w_rev=p95_config_data.get("w_rev", DEFAULT_W_REV),
+                soft_cap_threshold=p95_config_data.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
+                soft_cap_factor=p95_config_data.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
+            )
+        except (ValueError, KeyError, TypeError) as e:
+            logging.warning(f"Failed to parse config for scope {scope}: {e}")
         return None
 

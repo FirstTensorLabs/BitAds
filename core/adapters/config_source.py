@@ -48,9 +48,9 @@ class ValidatorConfigSource(IConfigSource):
         """
         # Try to fetch from dynamic config source first
         if self.dynamic_config_source is not None:
-            p95_config = self.dynamic_config_source.get_p95_config(scope)
-            if p95_config is not None:
-                return p95_config
+            config = self.dynamic_config_source.get_config(scope)
+            if config is not None:
+                return config.p95_config
         
         # Fallback to default logic
         if scope == "network":

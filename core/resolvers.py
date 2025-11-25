@@ -118,6 +118,6 @@ class WindowDaysGetter:
         Returns:
             Window days (defaults to DEFAULT_WINDOW_DAYS if unavailable)
         """
-        window_days = self.dynamic_config_source.get_window_days(scope)
-        return window_days if window_days is not None else DEFAULT_WINDOW_DAYS
+        config = self.dynamic_config_source.get_config(scope)
+        return config.window_days if config is not None else DEFAULT_WINDOW_DAYS
 

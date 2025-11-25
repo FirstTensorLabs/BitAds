@@ -11,18 +11,26 @@ from bittensor.utils.btlogging import logging
 from bitads_v3_core.app.scoring import ScoreCalculator
 from bitads_v3_core.domain.models import ScoreResult
 
-from core.constants import NETUIDS
+from core.constants import (
+    NETUIDS,
+    DEFAULT_USE_SOFT_CAP,
+    DEFAULT_USE_FLOORING,
+    DEFAULT_W_SALES,
+    DEFAULT_W_REV,
+    DEFAULT_SOFT_CAP_THRESHOLD,
+    DEFAULT_SOFT_CAP_FACTOR,
+)
 from core.adapters.config_source import ValidatorConfigSource
 from core.adapters.miner_stats_source import ValidatorMinerStatsSource
 from core.adapters.p95_provider import ValidatorP95Provider
 from core.adapters.score_sink import ValidatorScoreSink
 from core.adapters.burn_data_source import ValidatorBurnDataSource
-from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource
+from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource, get_default_config
 from core.adapters.campaign_source import ValidatorCampaignSource, ICampaignSource
 from core.bittensor_factory import BittensorFactory
 from core.resolvers import MechIdResolver, BurnPercentageResolver, WindowDaysGetter
-from core.validator_config import ValidatorConfig
 from core.domain.campaign import Campaign
+from core.constants import DEFAULT_MECHID
 
 
 class Validator:
@@ -33,12 +41,11 @@ class Validator:
     Following Dependency Inversion Principle - depends on abstractions (interfaces).
     """
     
-    def __init__(self, validator_config: ValidatorConfig = None):
+    def __init__(self):
         """
         Initialize validator.
         
-        Args:
-            validator_config: Optional validator configuration. Uses defaults if not provided.
+        Configuration is now fetched from the API (use_soft_cap, use_flooring from P95 config).
         """
         self.config = self._get_config()
         self._setup_logging()
@@ -57,14 +64,10 @@ class Validator:
         )
         self.tempo = self.subtensor.tempo(self.config.netuid)
         
-        # Use provided config or defaults
-        if validator_config is None:
-            validator_config = ValidatorConfig()
-        
         # Initialize core interfaces
-        self._initialize_core_components(validator_config)
+        self._initialize_core_components()   
     
-    def _initialize_core_components(self, validator_config: ValidatorConfig):
+    def _initialize_core_components(self):
         """Initialize all core components following dependency injection."""
         # Dynamic config source (for window_days, sales_emission_ratio, p95_config)
         self.dynamic_config_source = ValidatorDynamicConfigSource()
@@ -80,6 +83,7 @@ class Validator:
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,
+            dynamic_config_source=self.dynamic_config_source,
         )
         
         # Window days getter (fetches from dynamic_config_source per scope)
@@ -87,7 +91,8 @@ class Validator:
         
         # Sales emission ratio getter (fetches from dynamic_config_source per scope)
         def sales_emission_ratio_getter(scope: str):
-            return self.dynamic_config_source.get_sales_emission_ratio(scope)
+            config = self.dynamic_config_source.get_config(scope)
+            return config.sales_emission_ratio if config is not None else None
         
         # Burn data source
         self.burn_data_source = ValidatorBurnDataSource(
@@ -104,7 +109,7 @@ class Validator:
         # Resolvers
         mechid_resolver = MechIdResolver(
             scope_to_mechid=scope_to_mechid,
-            default_mechid=validator_config.campaign_mechid,
+            default_mechid=DEFAULT_MECHID,
         )
         burn_percentage_resolver = BurnPercentageResolver(self.burn_data_source)
         
@@ -119,12 +124,8 @@ class Validator:
             burn_percentage_resolver=burn_percentage_resolver,
         )
         
-        # Score calculator
-        self.score_calculator = ScoreCalculator(
-            p95_provider=self.p95_provider,
-            use_soft_cap=validator_config.use_soft_cap,
-            use_flooring=validator_config.use_flooring,
-        )
+        # Score calculator is now created dynamically per-scope in set_weights_for_scope
+        # to use scope-specific configuration (use_soft_cap, use_flooring, weights, etc.)
 
     def _get_config(self) -> Config:
         """Get Bittensor configuration."""
@@ -166,12 +167,13 @@ class Validator:
         """
         return self.campaign_source.get_campaigns()
     
-    def compute_scores_for_scope(self, scope: str) -> List[ScoreResult]:
+    def compute_scores_for_scope(self, scope: str, score_calculator: ScoreCalculator) -> List[ScoreResult]:
         """
         Compute scores for all miners for a given scope.
         
         Args:
             scope: Scope identifier (e.g., "network", "campaign:123")
+            score_calculator: ScoreCalculator instance configured for this scope
         
         Returns:
             List of ScoreResult entries
@@ -186,20 +188,40 @@ class Validator:
             return [ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0) for hotkey in self.metagraph.hotkeys]
         
         # Compute scores using ScoreCalculator
-        score_results = self.score_calculator.score_many(miner_stats_list, scope)
+        score_results = score_calculator.score_many(miner_stats_list, scope)
         return score_results
     
     def set_weights_for_scope(self, scope: str) -> None:
         """
         Compute scores and set weights for a specific scope/campaign.
         
+        Creates ScoreCalculator dynamically with scope-specific configuration
+        to allow runtime changes to scoring parameters.
+        
         Args:
             scope: Scope identifier
         """
         logging.info(f"Computing scores for scope: {scope}")
         
+        # Get scope-specific configuration, using defaults if unavailable
+        scope_config = self.dynamic_config_source.get_config(scope)
+        if scope_config is None:
+            logging.warning(f"No configuration found for scope {scope}, using defaults")
+            scope_config = get_default_config(scope)
+        
+        # Create ScoreCalculator with scope-specific configuration
+        score_calculator = ScoreCalculator(
+            p95_provider=self.p95_provider,
+            use_soft_cap=scope_config.use_soft_cap,
+            use_flooring=scope_config.use_flooring,
+            w_sales=scope_config.w_sales,
+            w_rev=scope_config.w_rev,
+            soft_cap_threshold=scope_config.soft_cap_threshold,
+            soft_cap_factor=scope_config.soft_cap_factor,
+        )
+        
         # Compute scores
-        score_results = self.compute_scores_for_scope(scope)
+        score_results = self.compute_scores_for_scope(scope, score_calculator)
         # Delegate publishing (which sets weights) to the score sink
         self.score_sink.publish(score_results, scope)
 
