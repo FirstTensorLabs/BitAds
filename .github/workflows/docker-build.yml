@@ -33,6 +33,23 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Determine branch name for SHA tag
+      id: branch
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          BRANCH_NAME="${{ github.head_ref }}"
+        elif [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          # For tags, don't use branch prefix
+          BRANCH_NAME=""
+        else
+          BRANCH_NAME="${{ github.ref_name }}"
+        fi
+        if [ -n "$BRANCH_NAME" ]; then
+          echo "prefix=${BRANCH_NAME}-" >> $GITHUB_OUTPUT
+        else
+          echo "prefix=sha-" >> $GITHUB_OUTPUT
+        fi
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@v5
@@ -44,7 +61,7 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=semver,pattern={{major}}
-          type=sha,prefix={{branch}}-
+          type=sha,prefix=${{ steps.branch.outputs.prefix }}
 
     - name: Build and push Docker image
       id: build
