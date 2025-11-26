@@ -28,7 +28,7 @@ from core.adapters.burn_data_source import ValidatorBurnDataSource
 from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource, get_default_config
 from core.adapters.campaign_source import ValidatorCampaignSource, ICampaignSource
 from core.bittensor_factory import BittensorFactory
-from core.resolvers import MechIdResolver, BurnPercentageResolver, WindowDaysGetter
+from core.resolvers import MechIdResolver, BurnPercentageResolver, FixedBurnPercentageResolver, WindowDaysGetter
 from core.domain.campaign import Campaign
 from core.constants import DEFAULT_MECHID
 
@@ -111,7 +111,13 @@ class Validator:
             scope_to_mechid=scope_to_mechid,
             default_mechid=DEFAULT_MECHID,
         )
-        burn_percentage_resolver = BurnPercentageResolver(self.burn_data_source)
+        
+        # Use fixed burn percentage resolver if override is provided, otherwise use dynamic calculation
+        if self.config.burn_percentage_override is not None:
+            logging.info(f"Using fixed burn percentage override: {self.config.burn_percentage_override}%")
+            burn_percentage_resolver = FixedBurnPercentageResolver(self.config.burn_percentage_override)
+        else:
+            burn_percentage_resolver = BurnPercentageResolver(self.burn_data_source)
         
         # Score sink
         self.score_sink = ValidatorScoreSink(
@@ -133,6 +139,12 @@ class Validator:
         parser.add_argument(
             "--netuid", type=int, default=NETUIDS[NETWORKS[0]], help="The chain subnet uid."
         )
+        parser.add_argument(
+            "--burn-percentage-override",
+            type=float,
+            default=None,
+            help="Override burn percentage with a fixed value (0.0-100.0). Useful for testing on testnet where emissions might be 0. If not provided, burn percentage is calculated dynamically."
+        )
         from bittensor.core.subtensor import Subtensor
         from bittensor_wallet import Wallet
         Subtensor.add_args(parser)
@@ -140,6 +152,14 @@ class Validator:
         Wallet.add_args(parser)
         
         config = Config(parser)
+        
+        # Validate burn percentage override if provided
+        if config.burn_percentage_override is not None:
+            if config.burn_percentage_override < 0.0 or config.burn_percentage_override > 100.0:
+                raise ValueError(
+                    f"burn_percentage_override must be between 0.0 and 100.0, got {config.burn_percentage_override}"
+                )
+        
         config.full_path = os.path.expanduser(
             "{}/{}/{}/netuid{}/validator".format(
                 config.logging.logging_dir,
@@ -224,6 +244,43 @@ class Validator:
         score_results = self.compute_scores_for_scope(scope, score_calculator)
         # Delegate publishing (which sets weights) to the score sink
         self.score_sink.publish(score_results, scope)
+    
+    def set_weights(self) -> None:
+        """
+        One-time weight setting for all active campaigns.
+        
+        Syncs metagraph, updates percentiles, and sets weights for all campaigns.
+        Does not check timing constraints - useful for manual updates or testing.
+        """
+        logging.info("Starting one-time weight setting...")
+        
+        # Sync metagraph to get latest state
+        logging.info("Syncing metagraph...")
+        self.metagraph.sync()
+        
+        # Update percentiles before computing scores
+        logging.info("Updating percentiles...")
+        self.p95_provider.update_percentiles()
+        
+        # Get all active campaigns
+        campaigns = self.get_campaigns()
+        logging.info(f"Found {len(campaigns)} active campaigns: {campaigns}")
+        
+        if not campaigns:
+            logging.warning("No active campaigns found.")
+            return
+        
+        # Set weights for each campaign
+        for campaign in campaigns:
+            try:
+                logging.info(f"Setting weights for campaign: {campaign.scope} (mech_id: {campaign.mech_id})")
+                self.set_weights_for_scope(campaign.scope)
+                logging.success(f"Successfully set weights for {campaign.scope}")
+            except Exception as e:
+                logging.error(f"Error setting weights for {campaign.scope}: {e}")
+                traceback.print_exc()
+        
+        logging.success("Weight setting completed.")
 
     def run(self):
         """Main validation loop."""

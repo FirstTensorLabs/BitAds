@@ -92,6 +92,35 @@ class BurnPercentageResolver:
         )
 
 
+class FixedBurnPercentageResolver:
+    """
+    Resolves burn percentage to a fixed value for all scopes.
+    
+    Useful for testing, especially on testnet where emissions might be 0.
+    """
+    
+    def __init__(self, burn_percentage: float):
+        """
+        Initialize fixed burn percentage resolver.
+        
+        Args:
+            burn_percentage: Fixed burn percentage to return (0.0-100.0) or None to disable burn
+        """
+        self.burn_percentage = burn_percentage
+    
+    def __call__(self, scope: str) -> Optional[float]:
+        """
+        Get fixed burn percentage for a given scope.
+        
+        Args:
+            scope: Scope identifier (ignored, returns fixed value)
+        
+        Returns:
+            Fixed burn percentage or None
+        """
+        return self.burn_percentage
+
+
 class WindowDaysGetter:
     """
     Getter for window days configuration per scope.

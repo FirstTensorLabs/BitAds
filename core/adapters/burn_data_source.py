@@ -141,7 +141,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
 
             subnet_tao_in_emission_value = subnet_tao_in_emission.value if hasattr(subnet_tao_in_emission, 'value') else subnet_tao_in_emission
 
-            if not isinstance(subnet_tao_in_emission_value, (int, float)) or subnet_tao_in_emission_value <= 0:
+            if not isinstance(subnet_tao_in_emission_value, (int, float)) or subnet_tao_in_emission_value < 0:
                 logging.warning(f"Invalid SubnetTaoInEmission value: {subnet_tao_in_emission_value}")
                 return None
 

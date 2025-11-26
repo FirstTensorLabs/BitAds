@@ -227,25 +227,22 @@ class ValidatorScoreSink(IScoreSink):
             # go with `set_mechanism_weights_extrinsic`
 
             while retries < max_retries and success is False:
-                try:
-                    logging.info(
-                        f"Setting weights for subnet [blue]{netuid}[/blue]. "
-                        f"Attempt [blue]{retries + 1}[/blue] of [green]{max_retries}[/green]."
-                    )
-                    success, message = set_mechanism_weights_extrinsic(
-                        subtensor=self.subtensor,
-                        wallet=wallet,
-                        netuid=netuid,
-                        mechid=mechid,
-                        uids=uids,
-                        weights=weights,
-                        version_key=version_key,
-                        wait_for_inclusion=wait_for_inclusion,
-                        wait_for_finalization=wait_for_finalization,
-                        period=period,
-                    )
-                except Exception as e:
-                    logging.error(f"Error setting weights: {e}")
-                    retries += 1
+                logging.info(
+                    f"Setting weights for subnet [blue]{netuid}[/blue]. "
+                    f"Attempt [blue]{retries + 1}[/blue] of [green]{max_retries}[/green]."
+                )
+                success, message = set_mechanism_weights_extrinsic(
+                    subtensor=self.subtensor,
+                    wallet=wallet,
+                    netuid=netuid,
+                    mechid=mechid,
+                    uids=uids,
+                    weights=weights,
+                    version_key=version_key,
+                    wait_for_inclusion=wait_for_inclusion,
+                    wait_for_finalization=wait_for_finalization,
+                    period=period,
+                )
+                retries += 1
 
             return success, message
