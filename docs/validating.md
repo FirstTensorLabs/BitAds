@@ -1,6 +1,6 @@
 # Validating Guide
 
-Welcome! This guide will help you set up and run a BitAds V3 validator. Validators play a crucial role in the network by evaluating miner performance and distributing rewards.
+Welcome! This guide will help you set up and run a BitAds validator on Bittensor Subnet 16. Validators play a crucial role in the network by evaluating miner performance and distributing rewards.
 
 ## What Does a Validator Do?
 
@@ -14,7 +14,7 @@ As a validator, you'll:
 
 ### Register Your Hotkey on the Subnet
 
-Before you can start validating, you must register your hotkey on the BitAds V3 subnet using the Bittensor CLI:
+Before you can start validating, you must register your hotkey on the BitAds subnet using the Bittensor CLI:
 
 **For Mainnet (finney)**:
 ```sh
