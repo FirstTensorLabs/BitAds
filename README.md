@@ -1,42 +1,40 @@
 <div align="center">
 
-![BitAds Logo](https://raw.githubusercontent.com/FirstTensorLabs/BitAds-Assets/main/Logo-white-green-black.png)
+<img src="https://raw.githubusercontent.com/FirstTensorLabs/BitAds-Assets/refs/heads/main/Logo-white-green.png" width="50%" alt="BitAds Logo" />
 
-# BitAds V3
+# BitAds | Subnet 16
 
-BitAds V3 is a Bittensor subnet that validates and rewards miners for providing ad campaign services. The system uses a sophisticated scoring algorithm to evaluate miner performance based on sales, revenue, and refund metrics.
+BitAds is a decentralized, proof of sale marketing network where merchandisers stake or rent ALPHA to own marketing bandwidth,<br> and miners earn on verified sales.
 
-**Website**: [bitads.ai](https://bitads.ai)
+**Website**: [bitads.ai](https://bitads.ai)<br>
+**Discord:** [SN16](https://discord.gg/qasY3HA9F9)<br>
+**X**: [bitads_ai](https://x.com/bitads_ai)
 
 </div>
 
-## What is BitAds V3?
-
-BitAds V3 is a specialized Bittensor subnet that:
-- Rewards miners for providing ad campaign services
-- Validates miner performance using sales, revenue, and refund metrics
-- Distributes rewards based on computed scores
-- Supports multiple campaigns with different scoring scopes
-
 ## How It Works
+- Campaign owners stake the required marketing bandwidth (SN16 ALPHA tokens) to launch a BitAds campaign.
+- Miners promote BitAds campaigns across any platforms they choose, turning their reach and creativity into real sales.
+- Validators score the miners and reward them based on their marketing performance.
 
-### For Miners
+## For Miners
 
-Miners provide ad campaign services and earn rewards based on:
-- **Sales**: Number of successful ad campaign sales
-- **Revenue**: Total revenue generated in USD
-- **Refunds**: Number of refund orders (lower is better)
+Miners drive traffic and conversions to BitAds campaigns and are rewarded based on:
+- **Verified sales:** Number of successful sales
+- **Revenue contributions:** Total revenue generated in USD
+- **Low refund ratios**
+- **Overall contribution to campaign success**
 
 See [Mining Guide](docs/mining.md) for details.
 
-### For Validators
+## For Validators
 
 Validators collect miner performance data, calculate scores, and submit weights to the Bittensor network. The scoring algorithm evaluates miners using:
 
 1. **Refund Rate**: $\text{ref}_i = \min(1, \frac{{\text{refund}\_\text{orders}}_i}{\max(1, \text{sales}_i)})$
 2. **Sales Normalization**: Square root normalization against P95 percentile
 3. **Revenue Normalization**: Logarithmic normalization against P95 percentile
-4. **Base Score**: $40\%$ sales + $60\%$ revenue
+4. **Base Score**: $40$% sales + $60$% revenue
 5. **Final Score**: $\text{score}_i = \text{base}_i \times (1 - \text{ref}_i)$
 
 See [Validating Guide](docs/validating.md) for setup instructions.
@@ -46,8 +44,8 @@ See [Validating Guide](docs/validating.md) for setup instructions.
 ### BitAds Miner Score
 
 **Purpose**: Compute a bounded score in $[0,1]$ per miner for the last 30 days, combining:
-- Sales volume (weight 40%)
-- Revenue in USD (weight 60%)
+- Sales volume (weight 15%)
+- Revenue in USD (weight 85%)
 - Refund rate as a multiplicative penalty
 
 This is outlier-resistant, easy to implement, and aligned with merchant value.
@@ -89,8 +87,8 @@ $${\text{rev}\_\text{norm}}_i = \min\left(1, \frac{\ln(1 + \text{rev}_i)}{\max(\
 
 ### Weights (fixed)
 
-- $w_{\text{sales}} = 0.40$
-- $w_{\text{rev}} = 0.60$
+- $w_{\text{sales}} = 0.15$
+- $w_{\text{rev}} = 0.85$
 
 Compute the base (pre-refund) score:
 
@@ -100,7 +98,7 @@ $\text{base}_i \in [0,1]$
 
 ### Refund Penalty (multiplicative)
 
-Given your requirement: if 10% refunds, multiply score by 0.90.
+If we have 10% refunds, multiply score by 0.90.
 
 General rule:
 
@@ -129,9 +127,9 @@ $$\text{sales}\_\text{norm} = \frac{\sqrt{48}}{\sqrt{60}} = \frac{6.928}{7.746} 
 
 $$\text{rev}\_\text{norm} = \frac{\ln(2301)}{\ln(4001)} = \frac{7.741}{8.294} \approx 0.933$$
 
-$$\text{base} = 0.40 \times 0.894 + 0.60 \times 0.933 = 0.358 + 0.560 = 0.918$$
+$$\text{base} = 0.15 \times 0.894 + 0.85 \times 0.933 = 0.134 + 0.793 = 0.927$$
 
-$$\text{score} = 0.918 \times 0.875 = 0.802$$
+$$\text{score} = 0.927 \times 0.875 = 0.811$$
 
 #### Example B (few sales, higher $ per sale)
 
@@ -145,9 +143,9 @@ $$\text{sales}\_\text{norm} = \frac{\sqrt{10}}{\sqrt{60}} = \frac{3.162}{7.746} 
 
 $$\text{rev}\_\text{norm} = \frac{\ln(3001)}{\ln(4001)} = \frac{8.007}{8.294} \approx 0.965$$
 
-$$\text{base} = 0.40 \times 0.408 + 0.60 \times 0.965 = 0.163 + 0.579 = 0.742$$
+$$\text{base} = 0.15 \times 0.408 + 0.85 \times 0.965 = 0.061 + 0.820 = 0.881$$
 
-$$\text{score} = 0.742 \times 0.90 = 0.668$$
+$$\text{score} = 0.881 \times 0.90 = 0.792$$
 
 A wins on volume and slightly better refund rate; B is very strong on revenue.
 
@@ -190,7 +188,7 @@ The burn mechanism automatically adjusts the percentage of emissions that are bu
 
 ### The Problem
 
-When emissions (paid in TAO) are worth more than the sales value miners generate, miners become over-profitable. This creates sell pressure as miners convert excess TAO to USDC, which can hurt the subnet's TAO price.
+When emitted ALPHA surpasses the value of verified sales, miners earn more than they contribute. This excess profit often gets sold into the market, increasing sell pressure and destabilizing ALPHA’s price.
 
 **Example**: Miners generate $10,000 in sales, but emissions are worth $30,000. The excess $20,000 creates over-profitability and sell pressure.
 
@@ -253,7 +251,7 @@ $$\text{burn} = \frac{20,000 - 15,000}{20,000} \times 100 = 25\%$$
 
 The burn percentage is calculated automatically by validators:
 
-1. **Periodic calculation**: Validators recalculate the burn percentage every X hours/days
+1. **Periodic calculation**: Validators recalculate the burn percentage every day.
 2. **Data fetching**: Validators fetch:
    - Total emissions in TAO (from chain)
    - TAO/USD price (from price oracle)
