@@ -34,7 +34,7 @@ Validators collect miner performance data, calculate scores, and submit weights 
 1. **Refund Rate**: $\text{ref}_i = \min(1, \frac{{\text{refund}\_\text{orders}}_i}{\max(1, \text{sales}_i)})$
 2. **Sales Normalization**: Square root normalization against P95 percentile
 3. **Revenue Normalization**: Logarithmic normalization against P95 percentile
-4. **Base Score**: $40$% sales + $60$% revenue
+4. **Base Score**: $15$% sales + $85$% revenue
 5. **Final Score**: $\text{score}_i = \text{base}_i \times (1 - \text{ref}_i)$
 
 See [Validating Guide](docs/validating.md) for setup instructions.
