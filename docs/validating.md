@@ -37,8 +37,8 @@ The easiest way to run a validator is using Docker Compose. This method handles 
 Create a new folder for your validator:
 
 ```sh
-mkdir bitads_v3
-cd bitads_v3
+mkdir bitads
+cd bitads
 ```
 
 ### Step 2: Get the Configuration File
@@ -107,8 +107,8 @@ If you need to run the validator directly on your system:
 ### Step 1: Install Dependencies
 
 ```sh
-git clone https://github.com/YOUR_ORG/bitads-v3.git
-cd bitads-v3/bitads_v3_validator
+git clone https://github.com/FirstTensorLabs/BitAds
+cd BitAds
 
 # Create a virtual environment
 python3 -m venv venv
