@@ -37,6 +37,9 @@ class DynamicConfig:
     w_rev: float
     soft_cap_threshold: int
     soft_cap_factor: float
+    # Optional fixed burn percentage for this scope (0.0-100.0).
+    # If set, this value should be used instead of the dynamic burn calculator.
+    burn_percentage: Optional[float] = None
 
 
 def get_default_config(scope: str) -> DynamicConfig:
@@ -61,6 +64,7 @@ def get_default_config(scope: str) -> DynamicConfig:
         w_rev=DEFAULT_W_REV,
         soft_cap_threshold=DEFAULT_SOFT_CAP_THRESHOLD,
         soft_cap_factor=DEFAULT_SOFT_CAP_FACTOR,
+        burn_percentage=None,
     )
 
 
@@ -188,6 +192,8 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
                 w_rev=p95_config_data.get("w_rev", DEFAULT_W_REV),
                 soft_cap_threshold=p95_config_data.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
                 soft_cap_factor=p95_config_data.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
+                # Optional fixed burn percentage for this scope. Falls back to None when not present.
+                burn_percentage=config_data.get("burn_percentage"),
             )
         except (ValueError, KeyError, TypeError) as e:
             logging.warning(f"Failed to parse config for scope {scope}: {e}")

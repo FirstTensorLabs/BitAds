@@ -111,13 +111,38 @@ class Validator:
             scope_to_mechid=scope_to_mechid,
             default_mechid=DEFAULT_MECHID,
         )
-        
-        # Use fixed burn percentage resolver if override is provided, otherwise use dynamic calculation
+
+        # Prepare burn percentage resolvers:
+        # - Global fixed override from CLI (if provided)
+        # - Dynamic resolver based on sales/emissions
+        # - Optional per-scope fixed burn percentage from DynamicConfig
         if self.config.burn_percentage_override is not None:
-            logging.info(f"Using fixed burn percentage override: {self.config.burn_percentage_override}%")
-            burn_percentage_resolver = FixedBurnPercentageResolver(self.config.burn_percentage_override)
+            logging.info(f"Using fixed burn percentage override: {self.config.burn_percentage_override}% (global)")
+            self._global_fixed_burn_resolver = FixedBurnPercentageResolver(self.config.burn_percentage_override)
         else:
-            burn_percentage_resolver = BurnPercentageResolver(self.burn_data_source)
+            self._global_fixed_burn_resolver = None
+
+        self._dynamic_burn_resolver = BurnPercentageResolver(self.burn_data_source)
+
+        def burn_percentage_resolver(scope: str):
+            """
+            Resolve burn percentage for a scope with the following precedence:
+            1. Global CLI override (burn_percentage_override)
+            2. Per-scope fixed burn_percentage from DynamicConfig (if set)
+            3. Dynamic burn calculation from sales/emission data
+            """
+            # 1. Global fixed override (highest precedence)
+            if self._global_fixed_burn_resolver is not None:
+                return self._global_fixed_burn_resolver(scope)
+
+            # 2. Per-scope fixed burn percentage from dynamic config
+            scope_config = self.dynamic_config_source.get_config(scope)
+            if scope_config is not None and scope_config.burn_percentage is not None:
+                # Use FixedBurnPercentageResolver for this scope when burn_percentage is set
+                return FixedBurnPercentageResolver(scope_config.burn_percentage)(scope)
+
+            # 3. Fallback to dynamic calculation
+            return self._dynamic_burn_resolver(scope)
         
         # Score sink
         self.score_sink = ValidatorScoreSink(
