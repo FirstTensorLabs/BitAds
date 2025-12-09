@@ -21,12 +21,12 @@ from core.constants import (
     DEFAULT_SOFT_CAP_FACTOR,
 )
 from core.adapters.config_source import ValidatorConfigSource
-from core.adapters.miner_stats_source import ValidatorMinerStatsSource
+from core.adapters.miner_stats_source import ValidatorMinerStatsSource, StorageMinerStatsSource
 from core.adapters.p95_provider import ValidatorP95Provider
 from core.adapters.score_sink import ValidatorScoreSink
 from core.adapters.burn_data_source import ValidatorBurnDataSource
-from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource, get_default_config
-from core.adapters.campaign_source import ValidatorCampaignSource, ICampaignSource
+from core.adapters.dynamic_config_source import ValidatorDynamicConfigSource, StorageDynamicConfigSource, get_default_config
+from core.adapters.campaign_source import ValidatorCampaignSource, StorageCampaignSource, ICampaignSource
 from core.bittensor_factory import BittensorFactory
 from core.resolvers import MechIdResolver, BurnPercentageResolver, FixedBurnPercentageResolver, WindowDaysGetter
 from core.domain.campaign import Campaign
@@ -69,17 +69,20 @@ class Validator:
     
     def _initialize_core_components(self):
         """Initialize all core components following dependency injection."""
+        # Get network from config
+        network = self.config.subtensor.network
+        
         # Dynamic config source (for window_days, sales_emission_ratio, p95_config)
-        self.dynamic_config_source = ValidatorDynamicConfigSource()
+        self.dynamic_config_source = StorageDynamicConfigSource(network=network)
         
         # Campaign source (for fetching campaigns with mech_ids)
-        self.campaign_source = ValidatorCampaignSource()
+        self.campaign_source = StorageCampaignSource(network=network)
         
         # Config source (delegates to dynamic_config_source for P95)
         self.config_source = ValidatorConfigSource(
             dynamic_config_source=self.dynamic_config_source
         )
-        self.miner_stats_source = ValidatorMinerStatsSource()
+        self.miner_stats_source = StorageMinerStatsSource(network=network)
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,

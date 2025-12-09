@@ -11,6 +11,12 @@ NETUIDS = {
     NETWORKS[1]: 368,
 }
 
+# Campaign storage base URLs by network
+NETWORK_BASE_URLS = {
+    NETWORKS[0]: None,
+    NETWORKS[1]: "https://dev-storage.bitads.ai",
+}
+
 # Burn calculation constants
 MINER_EMISSION_PERCENT = 0.41  # Percentage of emissions that go to miners
 
