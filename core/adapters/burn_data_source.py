@@ -28,7 +28,7 @@ import bittensor as bt
 import os
 
 
-from core.constants import MINER_EMISSION_PERCENT
+from core.constants import MINER_EMISSION_PERCENT, NETWORK_BASE_URLS
 
 @dataclass
 class BurnCalculationData:
@@ -212,7 +212,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
             window_days = self.window_days_getter(scope)
             
             # Use the same API base URL pattern as other adapters
-            api_base_url = os.getenv("API_BASE_URL")
+            api_base_url = os.getenv("API_BASE_URL", NETWORK_BASE_URLS.get(self.subtensor.network))
             if not api_base_url:
                 logging.warning("API_BASE_URL not set, cannot fetch total_sales_usd from API")
                 return None
