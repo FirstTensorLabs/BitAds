@@ -125,9 +125,8 @@ class StorageCampaignSource(ICampaignSource):
             campaigns = []
             for index, campaign_data in enumerate(campaigns_data):
                 campaign_id = campaign_data.get("campaign_id")
+                mech_id = campaign_data.get("mech_id")
                 if campaign_id is not None:
-                    # TODO: fix this with mapping - mech_id should come from proper mapping, not index
-                    mech_id = index
                     campaigns.append(Campaign(scope=campaign_id, mech_id=mech_id))
             
             logging.info(f"Fetched {len(campaigns)} campaigns from storage")
