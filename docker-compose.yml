@@ -19,6 +19,9 @@ services:
       WALLET_NAME: "${WALLET_NAME:-default}"
       WALLET_HOTKEY: "${WALLET_HOTKEY:-default}"
       LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
+      # Prometheus metrics / telemetry (enabled by default).
+      # To change port, set METRICS_PORT (default: 9100).
+      METRICS_PORT: "${METRICS_PORT:-9100}"
     # Mount wallets so the container can access your Bittensor keys.
     # Make sure you have your wallet files on the host in ./wallets
     volumes:

@@ -32,6 +32,16 @@ from core.resolvers import MechIdResolver, BurnPercentageResolver, FixedBurnPerc
 from core.domain.campaign import Campaign
 from core.constants import DEFAULT_MECHID
 
+try:
+    # Optional Prometheus support for metrics exporting.
+    # If prometheus_client is not installed, metrics are simply disabled.
+    from prometheus_client import Counter, Gauge, Histogram, start_http_server
+
+    _PROMETHEUS_AVAILABLE = True
+except ImportError:
+    Counter = Gauge = Histogram = start_http_server = None  # type: ignore
+    _PROMETHEUS_AVAILABLE = False
+
 
 class Validator:
     """
@@ -57,6 +67,10 @@ class Validator:
         self.metagraph = bt_objects.metagraph
         self.dendrite = bt_objects.dendrite
         self.my_uid = bt_objects.my_uid
+
+        # Metrics depend on wallet / hotkey being initialized.
+        self._setup_metrics()
+        
         
         # Initialize timing
         self.last_update = self.subtensor.blocks_since_last_update(
@@ -66,6 +80,92 @@ class Validator:
         
         # Initialize core interfaces
         self._initialize_core_components()   
+
+    def _setup_metrics(self) -> None:
+        """
+        Optionally start Prometheus metrics exporter and register core metrics.
+        
+        Metrics are enabled by default, but can be disabled via the
+        --disable-telemetry flag. The metrics port can be configured via the
+        METRICS_PORT environment variable, defaulting to 9100.
+        
+        If prometheus_client is not available, metrics are disabled gracefully.
+        """
+        self.metric_loop_iterations = None
+        self.metric_sync_and_process_duration = None
+        self.metric_last_process_success = None
+        self.metric_active_campaigns = None
+        self.metric_weights_sets_total = None
+        self.metric_weights_errors_total = None
+
+        # Allow operators to disable telemetry completely via config flag.
+        if getattr(self.config, "disable_telemetry", False):
+            logging.info("Telemetry disabled via --disable-telemetry flag.")
+            return
+
+        # Choose metrics port: env override or sensible default.
+        metrics_port = os.getenv("METRICS_PORT", "9100")
+
+        if not _PROMETHEUS_AVAILABLE:
+            logging.warning(
+                "METRICS_PORT is set but prometheus_client is not installed. "
+                "Install prometheus_client to enable Prometheus metrics."
+            )
+            return
+
+        # Try to extract a stable identifier for this validator (hotkey address).
+        try:
+            hotkey_address = self.wallet.hotkey.ss58_address  # type: ignore[attr-defined]
+        except Exception:
+            hotkey_address = "unknown"
+
+        try:
+            port = int(metrics_port)
+        except ValueError:
+            logging.warning(f"Invalid METRICS_PORT value '{metrics_port}', metrics disabled.")
+            return
+
+        try:
+            start_http_server(port)
+            logging.info(f"Started Prometheus metrics server on port {port}")
+        except Exception as e:
+            logging.warning(f"Failed to start Prometheus metrics server on port {port}: {e}")
+            return
+
+        # Core process metrics
+        self.metric_loop_iterations = Counter(
+            "validator_loop_iterations_total",
+            "Total number of iterations of the main validator loop.",
+            ["hotkey"],
+        ).labels(hotkey=hotkey_address)
+        self.metric_sync_and_process_duration = Histogram(
+            "validator_sync_and_process_duration_seconds",
+            "Duration of sync and process cycle in seconds.",
+            buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
+            labelnames=["hotkey"],
+        ).labels(hotkey=hotkey_address)
+        self.metric_last_process_success = Gauge(
+            "validator_last_process_success",
+            "1 if the last sync/process cycle succeeded, 0 otherwise.",
+            ["hotkey"],
+        ).labels(hotkey=hotkey_address)
+
+        # Campaign/weights metrics
+        self.metric_active_campaigns = Gauge(
+            "validator_active_campaigns",
+            "Number of active campaigns processed in the last cycle.",
+            ["hotkey"],
+        ).labels(hotkey=hotkey_address)
+        self.metric_weights_sets_total = Counter(
+            "validator_weights_sets_total",
+            "Total number of successful weight-setting operations.",
+            ["hotkey", "scope"],
+        )
+        self.metric_weights_errors_total = Counter(
+            "validator_weights_errors_total",
+            "Total number of errors during weight-setting operations.",
+            ["hotkey", "scope"],
+        )
     
     def _initialize_core_components(self):
         """Initialize all core components following dependency injection."""
@@ -173,6 +273,11 @@ class Validator:
             type=float,
             default=None,
             help="Override burn percentage with a fixed value (0.0-100.0). Useful for testing on testnet where emissions might be 0. If not provided, burn percentage is calculated dynamically."
+        )
+        parser.add_argument(
+            "--disable-telemetry",
+            action="store_true",
+            help="Disable Prometheus metrics / telemetry (enabled by default).",
         )
         from bittensor.core.subtensor import Subtensor
         from bittensor_wallet import Wallet
@@ -316,10 +421,22 @@ class Validator:
         logging.info("Starting validator loop.")
         while True:
             try:
+                if getattr(self, "metric_loop_iterations", None) is not None:
+                    self.metric_loop_iterations.inc()
+
+                start_time = time.time()
                 self._sync_and_process()
+                duration = time.time() - start_time
+
+                if getattr(self, "metric_sync_and_process_duration", None) is not None:
+                    self.metric_sync_and_process_duration.observe(duration)
+                if getattr(self, "metric_last_process_success", None) is not None:
+                    self.metric_last_process_success.set(1.0)
             except RuntimeError as e:
                 logging.error(f"Runtime error in validator loop: {e}")
                 traceback.print_exc()
+                if getattr(self, "metric_last_process_success", None) is not None:
+                    self.metric_last_process_success.set(0.0)
             except KeyboardInterrupt:
                 logging.success("Keyboard interrupt detected. Exiting validator.")
                 break
@@ -339,13 +456,26 @@ class Validator:
         """Process weights for all active campaigns."""
         campaigns = self.get_campaigns()
         logging.info(f"Processing {len(campaigns)} campaigns: {campaigns}")
+
+        if getattr(self, "metric_active_campaigns", None) is not None:
+            self.metric_active_campaigns.set(len(campaigns))
         
         for campaign in campaigns:
             try:
                 self.set_weights_for_scope(campaign.scope)
+                if getattr(self, "metric_weights_sets_total", None) is not None:
+                    self.metric_weights_sets_total.labels(
+                        hotkey=self.wallet.hotkey.ss58_address,  # type: ignore[attr-defined]
+                        scope=campaign.scope,
+                    ).inc()
             except Exception as e:
                 logging.error(f"Error setting weights for {campaign.scope}: {e}")
                 traceback.print_exc()
+                if getattr(self, "metric_weights_errors_total", None) is not None:
+                    self.metric_weights_errors_total.labels(
+                        hotkey=self.wallet.hotkey.ss58_address,  # type: ignore[attr-defined]
+                        scope=campaign.scope,
+                    ).inc()
     
     def _sleep_until_next_update(self):
         """Sleep until next weight update is due."""
