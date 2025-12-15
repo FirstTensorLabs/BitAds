@@ -103,6 +103,7 @@ class Validator:
             netuid=self.config.netuid,
             window_days_getter=window_days_getter,
             sales_emission_ratio_getter=sales_emission_ratio_getter,
+            miner_stats_source=self.miner_stats_source,
         )
         
         # Build mechid mapping from campaigns
