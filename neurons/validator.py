@@ -67,6 +67,11 @@ class Validator:
         self.metagraph = bt_objects.metagraph
         self.dendrite = bt_objects.dendrite
         self.my_uid = bt_objects.my_uid
+        # Stable identifier for this validator instance (used in metrics labels).
+        try:
+            self.hotkey_address = self.wallet.hotkey.ss58_address  # type: ignore[attr-defined]
+        except Exception:
+            self.hotkey_address = "unknown"
 
         # Metrics depend on wallet / hotkey being initialized.
         self._setup_metrics()
@@ -108,16 +113,10 @@ class Validator:
 
         if not _PROMETHEUS_AVAILABLE:
             logging.warning(
-                "METRICS_PORT is set but prometheus_client is not installed. "
-                "Install prometheus_client to enable Prometheus metrics."
+                "Prometheus metrics requested but prometheus_client is not installed. "
+                "Install prometheus_client to enable metrics or use --disable-telemetry."
             )
             return
-
-        # Try to extract a stable identifier for this validator (hotkey address).
-        try:
-            hotkey_address = self.wallet.hotkey.ss58_address  # type: ignore[attr-defined]
-        except Exception:
-            hotkey_address = "unknown"
 
         try:
             port = int(metrics_port)
@@ -137,25 +136,25 @@ class Validator:
             "validator_loop_iterations_total",
             "Total number of iterations of the main validator loop.",
             ["hotkey"],
-        ).labels(hotkey=hotkey_address)
+        ).labels(hotkey=self.hotkey_address)
         self.metric_sync_and_process_duration = Histogram(
             "validator_sync_and_process_duration_seconds",
             "Duration of sync and process cycle in seconds.",
             buckets=(0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0),
             labelnames=["hotkey"],
-        ).labels(hotkey=hotkey_address)
+        ).labels(hotkey=self.hotkey_address)
         self.metric_last_process_success = Gauge(
             "validator_last_process_success",
             "1 if the last sync/process cycle succeeded, 0 otherwise.",
             ["hotkey"],
-        ).labels(hotkey=hotkey_address)
+        ).labels(hotkey=self.hotkey_address)
 
         # Campaign/weights metrics
         self.metric_active_campaigns = Gauge(
             "validator_active_campaigns",
             "Number of active campaigns processed in the last cycle.",
             ["hotkey"],
-        ).labels(hotkey=hotkey_address)
+        ).labels(hotkey=self.hotkey_address)
         self.metric_weights_sets_total = Counter(
             "validator_weights_sets_total",
             "Total number of successful weight-setting operations.",
@@ -465,7 +464,7 @@ class Validator:
                 self.set_weights_for_scope(campaign.scope)
                 if getattr(self, "metric_weights_sets_total", None) is not None:
                     self.metric_weights_sets_total.labels(
-                        hotkey=self.wallet.hotkey.ss58_address,  # type: ignore[attr-defined]
+                        hotkey=self.hotkey_address,
                         scope=campaign.scope,
                     ).inc()
             except Exception as e:
@@ -473,7 +472,7 @@ class Validator:
                 traceback.print_exc()
                 if getattr(self, "metric_weights_errors_total", None) is not None:
                     self.metric_weights_errors_total.labels(
-                        hotkey=self.wallet.hotkey.ss58_address,  # type: ignore[attr-defined]
+                        hotkey=self.hotkey_address,
                         scope=campaign.scope,
                     ).inc()
     
