@@ -9,7 +9,10 @@ from neurons.validator import Validator
 
 def main():
     """Set weights for all active campaigns once."""
-    validator = Validator()
+    # Disable Prometheus / telemetry for this one-off utility script.
+    # We don't want to start the metrics HTTP server (port 9100) when
+    # running set_weights.py locally.
+    validator = Validator(enable_metrics=False)
     validator.set_weights()
 
 

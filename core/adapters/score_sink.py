@@ -1,7 +1,7 @@
 from typing import Callable, Dict, List, Optional
 
 from bittensor.core.settings import DEFAULT_PERIOD, version_as_int
-from bittensor.core.subtensor import commit_timelocked_mechanism_weights_extrinsic, set_mechanism_weights_extrinsic
+from bittensor.core.subtensor import commit_timelocked_weights_extrinsic, set_weights_extrinsic
 from bittensor.core.types import UIDs, Weights
 from bittensor.utils.btlogging import logging
 import bittensor as bt
@@ -207,7 +207,7 @@ class ValidatorScoreSink(IScoreSink):
                     f"Committing weights for subnet [blue]{netuid}[/blue]. "
                     f"Attempt [blue]{retries + 1}[blue] of [green]{max_retries}[/green]."
                 )
-                success, message = commit_timelocked_mechanism_weights_extrinsic(
+                success, message = commit_timelocked_weights_extrinsic(
                     subtensor=self.subtensor,
                     wallet=wallet,
                     netuid=netuid,
@@ -231,7 +231,7 @@ class ValidatorScoreSink(IScoreSink):
                     f"Setting weights for subnet [blue]{netuid}[/blue]. "
                     f"Attempt [blue]{retries + 1}[/blue] of [green]{max_retries}[/green]."
                 )
-                success, message = set_mechanism_weights_extrinsic(
+                success, message = set_weights_extrinsic(
                     subtensor=self.subtensor,
                     wallet=wallet,
                     netuid=netuid,

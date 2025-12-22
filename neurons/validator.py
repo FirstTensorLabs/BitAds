@@ -51,7 +51,7 @@ class Validator:
     Following Dependency Inversion Principle - depends on abstractions (interfaces).
     """
     
-    def __init__(self):
+    def __init__(self, enable_metrics: bool = True):
         """
         Initialize validator.
         
@@ -74,7 +74,12 @@ class Validator:
             self.hotkey_address = "unknown"
 
         # Metrics depend on wallet / hotkey being initialized.
-        self._setup_metrics()
+        # Allow callers (e.g., one-off scripts like set_weights.py) to disable
+        # Prometheus entirely, so we don't start a metrics HTTP server for
+        # local/utility runs.
+        self._metrics_enabled = enable_metrics
+        if self._metrics_enabled:
+            self._setup_metrics()
         
         
         # Initialize timing
