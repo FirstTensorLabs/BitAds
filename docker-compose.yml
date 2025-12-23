@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   validator:
     image: ghcr.io/firsttensorlabs/bitads:main
@@ -26,6 +24,10 @@ services:
     # Make sure you have your wallet files on the host in ./wallets
     volumes:
       - ~/.bittensor:/root/.bittensor
+    # Expose Prometheus metrics port for scraping
+    # Port mapping uses METRICS_PORT env var (defaults to 9100)
+    ports:
+      - "${METRICS_PORT:-9100}:${METRICS_PORT:-9100}"
     healthcheck:
       test: ["CMD", "python", "-c", "import os; print('ok')"]
       interval: 30s
