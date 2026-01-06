@@ -14,7 +14,24 @@ Mining in BitAds V3 involves providing ad campaign services on the Bittensor net
 
 ### Register Your Hotkey on the Subnet
 
-Before you can start mining, you must register your hotkey on the BitAds V3 subnet using the Bittensor CLI:
+You can register your hotkey either via the BitAds website (recommended) or directly with the Bittensor CLI.
+
+#### Option 1 — Via BitAds website
+
+- **Connect your wallet** on the BitAds website and open the **Register Miner** modal.
+- Review the header info: **Selected Account**, **Target Subnet**, **Slots for This Cycle**, **Registration Cost**, **Next Cycle In**.
+- ![Register Miner – Step 1](assets/register_miner_step_1.png)
+- Choose how to provide a hotkey:
+  - **Create a new hotkey** (“Not yet. Create for me.”): the system generates a hotkey and seed phrase. Save the seed phrase and confirm the checkbox, then click **Register Hotkey**.
+  - **Use an existing hotkey** (“Yes. Want to use it.”): enter your Bittensor hotkey, then proceed if it’s not already registered. If it is, you’ll see a brief message asking you to use a different hotkey.
+- Sign the registration transaction in **Polkadot.js** or **Bittensor Wallet**.
+- Wait for the status to reach **“Registration completed”**, then the modal shows a short confirmation with your account, subnet, miner hotkey, and status.
+- ![Register Miner – Step 2](assets/register_miner_step_2.png)
+- ![Register Miner – Step 3](assets/register_miner_step_3.png)
+
+#### Option 2 — CLI (advanced)
+
+You can also register directly via the Bittensor CLI:
 
 **For Mainnet (finney)**:
 ```sh
@@ -26,7 +43,7 @@ btcli subnet register --netuid 16
 btcli subnet register --netuid 368
 ```
 
-This command will register your hotkey on the subnet, allowing you to participate and receive rewards. Make sure you have sufficient TAO in your wallet to cover the registration fee.
+Make sure the wallet paying the fee has enough TAO to cover the registration cost.
 
 ## How Scoring Works
 
