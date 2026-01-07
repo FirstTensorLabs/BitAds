@@ -7,7 +7,7 @@ This guide is for miners who want to participate in the BitAds V3 subnet and ear
 Mining in BitAds V3 involves providing ad campaign services on the Bittensor network. Miners earn rewards based on their performance metrics:
 
 - **Sales**: Number of successful ad campaign sales
-- **Revenue**: Total revenue generated in USD
+- **Revenue**: Total net revenue generated in USD (after subtracting refunds)
 - **Refunds**: Number of refund orders (lower is better)
 
 ## Prerequisites
@@ -24,7 +24,7 @@ You can register your hotkey either via the BitAds website (recommended) or dire
 - Choose how to provide a hotkey:
   - **Create a new hotkey** (“Not yet. Create for me.”): the system generates a hotkey and seed phrase. Save the seed phrase and confirm the checkbox, then click **Register Hotkey**.
   - **Use an existing hotkey** (“Yes. Want to use it.”): enter your Bittensor hotkey, then proceed if it’s not already registered. If it is, you’ll see a brief message asking you to use a different hotkey.
-- Sign the registration transaction in **Polkadot.js** or **Bittensor Wallet**.
+- Sign the registration transaction in a **Polkadot.js-supported wallet**.
 - Wait for the status to reach **“Registration completed”**, then the modal shows a short confirmation with your account, subnet, miner hotkey, and status.
 - ![Register Miner – Step 2](assets/register_miner_step_2.png)
 - ![Register Miner – Step 3](assets/register_miner_step_3.png)
@@ -84,28 +84,46 @@ If `sales < 3`:
 score = score * 0.30
 ```
 
-## Maximizing Your Score
+## How to Maximize Your Miner Score
 
-### Increase Sales
+Your miner score reflects the **real economic value** you bring to the network.  
+It is based on **attributed sales**, **net revenue**, and **refunds** – not on clicks or impressions.
 
-- Provide high-quality ad campaign services
-- Maintain consistent performance over time
-- Focus on customer satisfaction and retention
-- Build a reputation for reliability
+### 1. Drive Attributed Sales
 
-### Increase Revenue
+- Bring **real, purchase-ready traffic**
+- Focus on users who are likely to complete a purchase
+- Make sure traffic is properly **attributed to your miner ID**
+- Only sales linked to your clicks and confirmed via the system count toward your score  
+**Conversions matter. Raw traffic volume does not.**
 
-- Offer premium services and packages
-- Optimize pricing strategies
-- Build long-term customer relationships
-- Upsell and cross-sell opportunities
+### 2. Maximize Net Revenue
 
-### Reduce Refunds
+- Your score is driven by **net revenue**, not just the number of orders
+- Prioritize campaigns with **strong buying intent**
+- Optimize traffic quality to increase **average order value**
+- **Net revenue = total sales minus refunds**  
+Higher net revenue directly increases your **emission weight**.
 
-- Deliver on promises and commitments
-- Provide excellent customer service
-- Set realistic expectations
-- Handle issues proactively before they become refunds
+### 3. Minimize Refund Impact
+
+- Refunds reduce your **contribution score**
+- Avoid misleading creatives or low-intent traffic
+- Send users who understand the offer and are ready to buy
+- Refunds directly reduce net revenue and negatively affect your score  
+**Clean sales outperform high volume with refunds.**
+
+### 4. Stay Consistent
+
+- Long-term performance matters
+- Stable, predictable results are rewarded over time
+- Short-term spikes with poor quality may reduce trust signals
+- Sustainable revenue beats one-off wins  
+Consistency builds miner weight.
+
+### In Short
+
+Your miner score increases when you **consistently deliver clean, attributed sales** with **strong net revenue** and **low refunds**.
 
 ## Understanding Your Performance
 
@@ -135,7 +153,7 @@ The number of successful ad campaign sales you've completed in the rolling windo
 
 ### Revenue in USD
 
-The total revenue generated from your ad campaign services, measured in USD.
+The total **net revenue** generated from your ad campaign services, measured in USD (after subtracting refunds).
 
 ### Refund Orders
 
