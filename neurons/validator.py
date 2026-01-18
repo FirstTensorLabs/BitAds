@@ -411,11 +411,12 @@ class Validator:
         # Set weights for each campaign
         for campaign in campaigns:
             try:
-                logging.info(f"Setting weights for campaign: {campaign.scope} (mech_id: {campaign.mech_id})")
-                self.set_weights_for_scope(campaign.scope)
-                logging.success(f"Successfully set weights for {campaign.scope}")
+                mech_scope = f"mech{campaign.mech_id}"
+                logging.info(f"Setting weights for campaign: {campaign.scope} (mech_id: {campaign.mech_id}, scope: {mech_scope})")
+                self.set_weights_for_scope(mech_scope)
+                logging.success(f"Successfully set weights for {campaign.scope} (scope: {mech_scope})")
             except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope}: {e}")
+                logging.error(f"Error setting weights for {campaign.scope} (scope: mech{campaign.mech_id}): {e}")
                 traceback.print_exc()
         
         logging.success("Weight setting completed.")
@@ -465,20 +466,21 @@ class Validator:
             self.metric_active_campaigns.set(len(campaigns))
         
         for campaign in campaigns:
+            mech_scope = f"mech{campaign.mech_id}"
             try:
-                self.set_weights_for_scope(campaign.scope)
+                self.set_weights_for_scope(mech_scope)
                 if getattr(self, "metric_weights_sets_total", None) is not None:
                     self.metric_weights_sets_total.labels(
                         hotkey=self.hotkey_address,
-                        scope=campaign.scope,
+                        scope=mech_scope,
                     ).inc()
             except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope}: {e}")
+                logging.error(f"Error setting weights for {campaign.scope} (scope: {mech_scope}): {e}")
                 traceback.print_exc()
                 if getattr(self, "metric_weights_errors_total", None) is not None:
                     self.metric_weights_errors_total.labels(
                         hotkey=self.hotkey_address,
-                        scope=campaign.scope,
+                        scope=mech_scope,
                     ).inc()
     
     def _sleep_until_next_update(self):

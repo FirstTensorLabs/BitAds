@@ -119,10 +119,10 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         Uses caching to prevent API spam. Returns cached data if available and still valid.
         
         Args:
-            scope: Scope identifier
+            scope: Scope identifier (e.g., "mech0", "mech1")
         
         Returns:
-            Config dictionary, or None if unavailable
+            Config dictionary for the specific scope, or None if unavailable
         """
         current_time = time.time()
         
@@ -141,7 +141,20 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
             url = f"{self.api_base_url}/config"
             response = requests.get(url, params={"scope": scope}, timeout=10)
             response.raise_for_status()
-            config_data = response.json()
+            response_data = response.json()
+            
+            # Extract config for this scope from nested structure
+            # Response format: {"config": {"mech0": {...}, "mech1": {...}}, "updated_at": "..."}
+            if "config" not in response_data:
+                logging.warning(f"Response missing 'config' key for scope {scope}")
+                return None
+            
+            config_dict = response_data["config"]
+            if scope not in config_dict:
+                logging.debug(f"No config found for scope {scope} in response")
+                return None
+            
+            config_data = config_dict[scope]
             
             # Store in cache
             self._cache[scope] = (config_data, current_time)
@@ -171,14 +184,19 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         
         try:
             # Parse P95 config
+            # New format: p95_config has "sales" and "revenue_usd" instead of "manual_p95_sales" and "manual_p95_revenue_usd"
             p95_config_data = config_data.get("p95_config", {})
             mode_str = p95_config_data.get("mode", "auto")
             mode = P95Mode.MANUAL if mode_str == "manual" else P95Mode.AUTO
             
+            # Map new field names to P95Config fields
+            manual_p95_sales = p95_config_data.get("sales")
+            manual_p95_revenue_usd = p95_config_data.get("revenue_usd")
+            
             p95_config = P95Config(
                 mode=mode,
-                manual_p95_sales=p95_config_data.get("manual_p95_sales"),
-                manual_p95_revenue_usd=p95_config_data.get("manual_p95_revenue_usd"),
+                manual_p95_sales=manual_p95_sales,
+                manual_p95_revenue_usd=manual_p95_revenue_usd,
                 ema_alpha=p95_config_data.get("ema_alpha"),
                 scope=scope
             )
@@ -187,12 +205,12 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
                 window_days=config_data.get("window_days", DEFAULT_WINDOW_DAYS),
                 sales_emission_ratio=config_data.get("sales_emission_ratio", DEFAULT_SALES_EMISSION_RATIO),
                 p95_config=p95_config,
-                use_soft_cap=p95_config_data.get("use_soft_cap", DEFAULT_USE_SOFT_CAP),
-                use_flooring=p95_config_data.get("use_flooring", DEFAULT_USE_FLOORING),
-                w_sales=p95_config_data.get("w_sales", DEFAULT_W_SALES),
-                w_rev=p95_config_data.get("w_rev", DEFAULT_W_REV),
-                soft_cap_threshold=p95_config_data.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
-                soft_cap_factor=p95_config_data.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
+                use_soft_cap=config_data.get("use_soft_cap", DEFAULT_USE_SOFT_CAP),
+                use_flooring=config_data.get("use_flooring", DEFAULT_USE_FLOORING),
+                w_sales=config_data.get("w_sales", DEFAULT_W_SALES),
+                w_rev=config_data.get("w_rev", DEFAULT_W_REV),
+                soft_cap_threshold=config_data.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
+                soft_cap_factor=config_data.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
                 # Optional fixed burn percentage for this scope. Falls back to None when not present.
                 burn_percentage=config_data.get("burn_percentage"),
             )
