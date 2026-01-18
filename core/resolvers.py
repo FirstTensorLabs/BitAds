@@ -60,7 +60,7 @@ class BurnPercentageResolver:
         """
         self.burn_data_source = burn_data_source
     
-    def __call__(self, scope: str) -> Optional[float]:
+    def __call__(self, scope: str, miner_stats_scope: str = None) -> Optional[float]:
         """
         Get burn percentage for a given scope.
         
@@ -74,12 +74,14 @@ class BurnPercentageResolver:
            - Otherwise: burn = (emissions - sales * ratio) / emissions * 100%
         
         Args:
-            scope: Scope identifier (e.g., "network", "campaign:123")
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                              If not provided, uses scope.
         
         Returns:
             Burn percentage (0.0-100.0) or None to disable burn
         """
-        burn_data = self.burn_data_source.get_burn_data(scope)
+        burn_data = self.burn_data_source.get_burn_data(scope, miner_stats_scope=miner_stats_scope)
         
         if burn_data is None:
             return None

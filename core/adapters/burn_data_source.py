@@ -43,12 +43,14 @@ class IBurnDataSource(ABC):
     """Interface for fetching burn calculation data."""
     
     @abstractmethod
-    def get_burn_data(self, scope: str) -> Optional[BurnCalculationData]:
+    def get_burn_data(self, scope: str, miner_stats_scope: str = None) -> Optional[BurnCalculationData]:
         """
         Get burn calculation data for a given scope.
         
         Args:
-            scope: Scope identifier (e.g., "network", "campaign:123")
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                              If not provided, uses scope.
         
         Returns:
             BurnCalculationData if available, None otherwise
@@ -91,7 +93,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
         self.sales_emission_ratio_getter = sales_emission_ratio_getter
         self.miner_stats_source = miner_stats_source
         
-    def get_burn_data(self, scope: str) -> Optional[BurnCalculationData]:
+    def get_burn_data(self, scope: str, miner_stats_scope: str = None) -> Optional[BurnCalculationData]:
         """
         Get burn calculation data for a given scope.
         
@@ -99,14 +101,19 @@ class ValidatorBurnDataSource(IBurnDataSource):
         data is available, None otherwise.
         
         Args:
-            scope: Scope identifier
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                              If not provided, uses scope.
         
         Returns:
             BurnCalculationData if all data is available, None otherwise
         """
+        # Use campaign scope for miner stats, fallback to scope if not provided
+        stats_scope = miner_stats_scope if miner_stats_scope is not None else scope
+        
         emission_in_tao = self._fetch_emission_in_tao(scope)
         tao_price_usd = self._fetch_tao_price_usd()
-        total_sales_usd = self._fetch_total_sales_usd(scope)
+        total_sales_usd = self._fetch_total_sales_usd(stats_scope)
         sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
 
         # Return None if any required data is missing

@@ -77,12 +77,18 @@ class ValidatorScoreSink(IScoreSink):
         if owner_index is not None:
             weights[owner_index] = 1.0
 
-    def publish(self, scores: List[ScoreResult], scope: str) -> None:
+    def publish(self, scores: List[ScoreResult], scope: str, miner_stats_scope: str = None) -> None:
         """
         Publish score results by setting weights on-chain for the given scope.
         Assumes miner_id is a hotkey string; maps hotkeys to UIDs via metagraph.
         Miners not in scores get 0.0 (no work = no score).
         Applies creator burn if burn_percentage is set.
+        
+        Args:
+            scores: List of score results
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                              If not provided, uses scope.
         """
         mechid = self.mechid_resolver(scope)
         logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
@@ -114,7 +120,13 @@ class ValidatorScoreSink(IScoreSink):
         # Get burn percentage for this scope (if resolver is provided)
         burn_percentage = None
         if self.burn_percentage_resolver is not None:
-            burn_percentage = self.burn_percentage_resolver(scope)
+            # Check if resolver accepts miner_stats_scope parameter
+            import inspect
+            sig = inspect.signature(self.burn_percentage_resolver)
+            if 'miner_stats_scope' in sig.parameters:
+                burn_percentage = self.burn_percentage_resolver(scope, miner_stats_scope=miner_stats_scope)
+            else:
+                burn_percentage = self.burn_percentage_resolver(scope)
         
         # Calculate weights before burn (normalized)
         total = sum(miner_scores)

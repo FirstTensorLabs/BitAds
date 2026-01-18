@@ -232,12 +232,17 @@ class Validator:
 
         self._dynamic_burn_resolver = BurnPercentageResolver(self.burn_data_source)
 
-        def burn_percentage_resolver(scope: str):
+        def burn_percentage_resolver(scope: str, miner_stats_scope: str = None):
             """
             Resolve burn percentage for a scope with the following precedence:
             1. Global CLI override (burn_percentage_override)
             2. Per-scope fixed burn_percentage from DynamicConfig (if set)
             3. Dynamic burn calculation from sales/emission data
+            
+            Args:
+                scope: Scope identifier for config (e.g., "mech0", "mech1")
+                miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                                  If not provided, uses scope.
             """
             # 1. Global fixed override (highest precedence)
             if self._global_fixed_burn_resolver is not None:
@@ -250,7 +255,7 @@ class Validator:
                 return FixedBurnPercentageResolver(scope_config.burn_percentage)(scope)
 
             # 3. Fallback to dynamic calculation
-            return self._dynamic_burn_resolver(scope)
+            return self._dynamic_burn_resolver(scope, miner_stats_scope=miner_stats_scope)
         
         # Score sink
         self.score_sink = ValidatorScoreSink(
@@ -325,47 +330,51 @@ class Validator:
         """
         return self.campaign_source.get_campaigns()
     
-    def compute_scores_for_scope(self, scope: str, score_calculator: ScoreCalculator) -> List[ScoreResult]:
+    def compute_scores_for_campaign(self, campaign: Campaign, score_calculator: ScoreCalculator) -> List[ScoreResult]:
         """
-        Compute scores for all miners for a given scope.
+        Compute scores for all miners for a given campaign.
         
         Args:
-            scope: Scope identifier (e.g., "network", "campaign:123")
-            score_calculator: ScoreCalculator instance configured for this scope
+            campaign: Campaign object with scope and mech_id
+            score_calculator: ScoreCalculator instance configured for this campaign
         
         Returns:
             List of ScoreResult entries
         """
-        # Fetch miner statistics for this scope
-        window_days = self.burn_data_source.window_days_getter(scope)
-        miner_stats_list = self.miner_stats_source.fetch_window(scope, window_days)
+        mech_scope = f"mech{campaign.mech_id}"
+        
+        # Fetch miner statistics using campaign scope (campaign_id)
+        window_days = self.burn_data_source.window_days_getter(mech_scope)
+        miner_stats_list = self.miner_stats_source.fetch_window(campaign.scope, window_days)
         
         if not miner_stats_list:
-            logging.warning(f"No miner stats found for scope {scope}, using zero scores")
+            logging.warning(f"No miner stats found for campaign {campaign.scope}, using zero scores")
             # Produce zero scores for all hotkeys (miners with no work get 0)
             return [ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0) for hotkey in self.metagraph.hotkeys]
         
         # Compute scores using ScoreCalculator
-        score_results = score_calculator.score_many(miner_stats_list, scope)
+        score_results = score_calculator.score_many(miner_stats_list, mech_scope)
         return score_results
     
-    def set_weights_for_scope(self, scope: str) -> None:
+    def set_weights_for_campaign(self, campaign: Campaign) -> None:
         """
-        Compute scores and set weights for a specific scope/campaign.
+        Compute scores and set weights for a specific campaign.
         
-        Creates ScoreCalculator dynamically with scope-specific configuration
+        Creates ScoreCalculator dynamically with campaign-specific configuration
         to allow runtime changes to scoring parameters.
         
         Args:
-            scope: Scope identifier
+            campaign: Campaign object with scope and mech_id
         """
-        logging.info(f"Computing scores for scope: {scope}")
+        mech_scope = f"mech{campaign.mech_id}"
         
-        # Get scope-specific configuration, using defaults if unavailable
-        scope_config = self.dynamic_config_source.get_config(scope)
+        logging.info(f"Computing scores for campaign: {campaign.scope} (mech_id: {campaign.mech_id}, mech_scope: {mech_scope})")
+        
+        # Get scope-specific configuration using mech_scope (for new API format)
+        scope_config = self.dynamic_config_source.get_config(mech_scope)
         if scope_config is None:
-            logging.warning(f"No configuration found for scope {scope}, using defaults")
-            scope_config = get_default_config(scope)
+            logging.warning(f"No configuration found for mech_scope {mech_scope}, using defaults")
+            scope_config = get_default_config(mech_scope)
         
         # Create ScoreCalculator with scope-specific configuration
         score_calculator = ScoreCalculator(
@@ -378,10 +387,11 @@ class Validator:
             soft_cap_factor=scope_config.soft_cap_factor,
         )
         
-        # Compute scores
-        score_results = self.compute_scores_for_scope(scope, score_calculator)
+        # Compute scores for this campaign
+        score_results = self.compute_scores_for_campaign(campaign, score_calculator)
         # Delegate publishing (which sets weights) to the score sink
-        self.score_sink.publish(score_results, scope)
+        # Pass campaign.scope for burn calculation which needs it for miner stats
+        self.score_sink.publish(score_results, mech_scope, miner_stats_scope=campaign.scope)
     
     def set_weights(self) -> None:
         """
@@ -411,12 +421,10 @@ class Validator:
         # Set weights for each campaign
         for campaign in campaigns:
             try:
-                mech_scope = f"mech{campaign.mech_id}"
-                logging.info(f"Setting weights for campaign: {campaign.scope} (mech_id: {campaign.mech_id}, scope: {mech_scope})")
-                self.set_weights_for_scope(mech_scope)
-                logging.success(f"Successfully set weights for {campaign.scope} (scope: {mech_scope})")
+                self.set_weights_for_campaign(campaign)
+                logging.success(f"Successfully set weights for {campaign.scope}")
             except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope} (scope: mech{campaign.mech_id}): {e}")
+                logging.error(f"Error setting weights for {campaign.scope}: {e}")
                 traceback.print_exc()
         
         logging.success("Weight setting completed.")
@@ -468,14 +476,14 @@ class Validator:
         for campaign in campaigns:
             mech_scope = f"mech{campaign.mech_id}"
             try:
-                self.set_weights_for_scope(mech_scope)
+                self.set_weights_for_campaign(campaign)
                 if getattr(self, "metric_weights_sets_total", None) is not None:
                     self.metric_weights_sets_total.labels(
                         hotkey=self.hotkey_address,
                         scope=mech_scope,
                     ).inc()
             except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope} (scope: {mech_scope}): {e}")
+                logging.error(f"Error setting weights for {campaign.scope}: {e}")
                 traceback.print_exc()
                 if getattr(self, "metric_weights_errors_total", None) is not None:
                     self.metric_weights_errors_total.labels(
