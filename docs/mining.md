@@ -21,9 +21,7 @@ You can register your hotkey either via the BitAds website (recommended) or dire
 - **Connect your wallet** on the BitAds website and open the **Register Miner** modal.
 - Review the header info: **Selected Account**, **Target Subnet**, **Slots for This Cycle**, **Registration Cost**, **Next Cycle In**.
 - ![Register Miner – Step 1](assets/register_miner_step_1.png)
-- Choose how to provide a hotkey:
-  - **Create a new hotkey** (“Not yet. Create for me.”): the system generates a hotkey and seed phrase. Save the seed phrase and confirm the checkbox, then click **Register Hotkey**.
-  - **Use an existing hotkey** (“Yes. Want to use it.”): enter your Bittensor hotkey, then proceed if it’s not already registered. If it is, you’ll see a brief message asking you to use a different hotkey.
+- **Generate New Hotkey**: the system generates a hotkey and seed phrase. Save the seed phrase and confirm the checkbox, then click **Register Hotkey**.
 - Sign the registration transaction in a **Polkadot.js-supported wallet**.
 - Wait for the status to reach **“Registration completed”**, then the modal shows a short confirmation with your account, subnet, miner hotkey, and status.
 - ![Register Miner – Step 2](assets/register_miner_step_2.png)
