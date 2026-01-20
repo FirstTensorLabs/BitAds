@@ -1,10 +1,10 @@
 # Mining Guide
 
-This guide is for miners who want to participate in the BitAds V3 subnet and earn rewards based on their performance.
+This guide is for miners who want to participate in the BitAds subnet and earn rewards based on their performance.
 
 ## What is Mining?
 
-Mining in BitAds V3 involves providing ad campaign services on the Bittensor network. Miners earn rewards based on their performance metrics:
+Mining in BitAds involves providing ad campaign services on the Bittensor network. Miners earn rewards based on their performance metrics:
 
 - **Sales**: Number of successful ad campaign sales
 - **Revenue**: Total net revenue generated in USD (after subtracting refunds)
@@ -66,9 +66,9 @@ Normalized against the 95th percentile of all miners.
 
 ### Step 4: Base Score
 ```
-base = 0.40 * sales_norm + 0.60 * rev_norm
+base = 0.15 * sales_norm + 0.85 * rev_norm
 ```
-Weighted combination: 40% sales, 60% revenue.
+Weighted combination: 15% sales, 85% revenue.
 
 ### Step 5: Final Score
 ```
