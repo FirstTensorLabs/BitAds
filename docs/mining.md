@@ -20,12 +20,12 @@ You can register your hotkey either via the BitAds website (recommended) or dire
 
 - **Connect your wallet** on the BitAds website and open the **Register Miner** modal.
 - Review the header info: **Selected Account**, **Target Subnet**, **Slots for This Cycle**, **Registration Cost**, **Next Cycle In**.
-- ![Register Miner – Step 1](assets/register_miner_step_1.png)
+![Register Miner – Step 1](assets/register_miner_step_1.png)
 - **Generate New Hotkey**: the system generates a hotkey and seed phrase. Save the seed phrase and confirm the checkbox, then click **Register Hotkey**.
 - Sign the registration transaction in a **Polkadot.js-supported wallet**.
 - Wait for the status to reach **“Registration completed”**, then the modal shows a short confirmation with your account, subnet, miner hotkey, and status.
-- ![Register Miner – Step 2](assets/register_miner_step_2.png)
-- ![Register Miner – Step 3](assets/register_miner_step_3.png)
+![Register Miner – Step 2](assets/register_miner_step_2.png)
+![Register Miner – Step 3](assets/register_miner_step_3.png)
 
 #### Option 2 — CLI (advanced)
 
