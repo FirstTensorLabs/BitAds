@@ -195,6 +195,7 @@ class Validator:
             f"mech{campaign.mech_id}": campaign.scope 
             for campaign in campaigns
         }
+        logging.info(f"Built mech_scope -> campaign_scope mapping: {mech_scope_to_campaign_scope}")
         
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
@@ -222,12 +223,14 @@ class Validator:
         
         # Build mechid mapping from campaigns (reuse campaigns already fetched above)
         scope_to_mechid = {campaign.scope: campaign.mech_id for campaign in campaigns}
+        logging.info(f"Built campaign_scope -> mech_id mapping: {scope_to_mechid}")
         
         # Resolvers
         mechid_resolver = MechIdResolver(
             scope_to_mechid=scope_to_mechid,
             default_mechid=DEFAULT_MECHID,
         )
+        logging.info(f"MechIdResolver initialized with default_mechid={DEFAULT_MECHID}")
 
         # Prepare burn percentage resolvers:
         # - Global fixed override from CLI (if provided)
@@ -352,8 +355,12 @@ class Validator:
         """
         mech_scope = f"mech{campaign.mech_id}"
         
+        logging.info(f"Computing scores: campaign_id={campaign.scope}, mech_id={campaign.mech_id}, mech_scope={mech_scope}")
+        
         # Fetch miner statistics using campaign scope (campaign_id)
+        # Window days should be fetched for mech_scope (config is stored per mechanism, not per campaign)
         window_days = self.burn_data_source.window_days_getter(mech_scope)
+        logging.info(f"Fetching miner stats: campaign_scope={campaign.scope}, window_days={window_days} (from mech_scope={mech_scope})")
         miner_stats_list = self.miner_stats_source.fetch_window(campaign.scope, window_days)
         
         if not miner_stats_list:
@@ -361,8 +368,20 @@ class Validator:
             # Produce zero scores for all hotkeys (miners with no work get 0)
             return [ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0) for hotkey in self.metagraph.hotkeys]
         
+        logging.info(f"Fetched {len(miner_stats_list)} miner stats for campaign_scope={campaign.scope}, computing scores with mech_scope={mech_scope}")
+        
+        # Cache miner stats in P95 provider to avoid duplicate fetch in AUTO mode
+        self.p95_provider.set_miner_stats_cache(campaign.scope, miner_stats_list)
+        
         # Compute scores using ScoreCalculator
+        # P95 provider will use cached miner stats if needed (AUTO mode)
         score_results = score_calculator.score_many(miner_stats_list, mech_scope)
+        logging.info(f"Computed {len(score_results)} scores for mech_scope={mech_scope}")
+        
+        # Clear miner stats cache for this campaign after processing is complete
+        # This ensures we fetch fresh stats on the next iteration
+        self.p95_provider.clear_miner_stats_cache(campaign.scope)
+        
         return score_results
     
     def set_weights_for_campaign(self, campaign: Campaign) -> None:
@@ -384,6 +403,8 @@ class Validator:
         if scope_config is None:
             logging.warning(f"No configuration found for mech_scope {mech_scope}, using defaults")
             scope_config = get_default_config(mech_scope)
+        else:
+            logging.info(f"Using config for mech_scope={mech_scope}: use_soft_cap={scope_config.use_soft_cap}, use_flooring={scope_config.use_flooring}, w_sales={scope_config.w_sales}, w_rev={scope_config.w_rev}")
         
         # Create ScoreCalculator with scope-specific configuration
         score_calculator = ScoreCalculator(

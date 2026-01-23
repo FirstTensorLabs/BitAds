@@ -91,6 +91,7 @@ class ValidatorScoreSink(IScoreSink):
                               If not provided, uses scope.
         """
         mechid = self.mechid_resolver(scope)
+        logging.info(f"ScoreSink.publish: scope={scope}, resolved mechid={mechid}, miner_stats_scope={miner_stats_scope}")
         logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
 
         # Build UID->score map

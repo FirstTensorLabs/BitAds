@@ -296,11 +296,11 @@ class StorageDynamicConfigSource(IDynamicConfigSource):
         """
         Get complete dynamic configuration for a given scope.
         
-        This provides subnet-level configuration, so it returns the same config
-        for all scopes when available.
+        Configuration is stored per mechanism scope (e.g., "mech0", "mech1")
+        in the "config" object of subnet_config.json.
         
         Args:
-            scope: Scope identifier (e.g., "network", "campaign:123")
+            scope: Mechanism scope identifier (e.g., "mech0", "mech1")
         
         Returns:
             DynamicConfig with all configuration values, or None if unavailable
@@ -310,31 +310,40 @@ class StorageDynamicConfigSource(IDynamicConfigSource):
             return None
         
         try:
-            # Parse P95 config
-            p95_config_data = config_data.get("p95_config", {})
+            # Get scope-specific config from config.config[scope]
+            # Structure: { "config": { "mech0": {...}, "mech1": {...} } }
+            config_root = config_data.get("config", {})
+            scope_config = config_root.get(scope, {})
+            
+            if not scope_config:
+                logging.debug(f"No config found for scope '{scope}' in subnet_config.json, using defaults")
+                return None
+            
+            # Parse P95 config from scope_config
+            p95_config_data = scope_config.get("p95_config", {})
             mode_str = p95_config_data.get("mode", "auto")
             mode = P95Mode.MANUAL if mode_str == "manual" else P95Mode.AUTO
             
             p95_config = P95Config(
                 mode=mode,
-                manual_p95_sales=p95_config_data.get("manual_p95_sales"),
-                manual_p95_revenue_usd=p95_config_data.get("manual_p95_revenue_usd"),
+                manual_p95_sales=p95_config_data.get("sales"),  # Note: in JSON it's "sales", not "manual_p95_sales"
+                manual_p95_revenue_usd=p95_config_data.get("revenue_usd"),  # Note: in JSON it's "revenue_usd", not "manual_p95_revenue_usd"
                 ema_alpha=p95_config_data.get("ema_alpha"),
                 scope=scope
             )
             
             return DynamicConfig(
-                window_days=config_data.get("window_days", DEFAULT_WINDOW_DAYS),
-                sales_emission_ratio=config_data.get("sales_emission_ratio", DEFAULT_SALES_EMISSION_RATIO),
+                window_days=scope_config.get("window_days", DEFAULT_WINDOW_DAYS),
+                sales_emission_ratio=scope_config.get("sales_emission_ratio", DEFAULT_SALES_EMISSION_RATIO),
                 p95_config=p95_config,
-                use_soft_cap=p95_config_data.get("use_soft_cap", DEFAULT_USE_SOFT_CAP),
-                use_flooring=p95_config_data.get("use_flooring", DEFAULT_USE_FLOORING),
-                w_sales=p95_config_data.get("w_sales", DEFAULT_W_SALES),
-                w_rev=p95_config_data.get("w_rev", DEFAULT_W_REV),
-                soft_cap_threshold=p95_config_data.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
-                soft_cap_factor=p95_config_data.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
+                use_soft_cap=scope_config.get("use_soft_cap", DEFAULT_USE_SOFT_CAP),
+                use_flooring=scope_config.get("use_flooring", DEFAULT_USE_FLOORING),
+                w_sales=scope_config.get("w_sales", DEFAULT_W_SALES),
+                w_rev=scope_config.get("w_rev", DEFAULT_W_REV),
+                soft_cap_threshold=scope_config.get("soft_cap_threshold", DEFAULT_SOFT_CAP_THRESHOLD),
+                soft_cap_factor=scope_config.get("soft_cap_factor", DEFAULT_SOFT_CAP_FACTOR),
                 # Optional fixed burn percentage. Falls back to None when not present.
-                burn_percentage=config_data.get("burn_percentage"),
+                burn_percentage=scope_config.get("burn_percentage"),
             )
         except (ValueError, KeyError, TypeError) as e:
             logging.warning(f"Failed to parse config from storage for scope {scope}: {e}")

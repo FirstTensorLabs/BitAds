@@ -110,8 +110,11 @@ class ValidatorBurnDataSource(IBurnDataSource):
         """
         # Use campaign scope for miner stats, fallback to scope if not provided
         stats_scope = miner_stats_scope if miner_stats_scope is not None else scope
+        logging.info(f"BurnDataSource.get_burn_data: config_scope={scope}, miner_stats_scope={stats_scope}")
         
-        emission_in_tao = self._fetch_emission_in_tao(scope)
+        # Window days should be fetched for mech_scope (scope) because config is stored per mechanism
+        # Miner stats are fetched using campaign_scope (stats_scope)
+        emission_in_tao = self._fetch_emission_in_tao(scope, window_days_scope=scope)
         tao_price_usd = self._fetch_tao_price_usd()
         total_sales_usd = self._fetch_total_sales_usd(stats_scope, mech_scope=scope)
         sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
@@ -128,7 +131,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
         )
 
     
-    def _fetch_emission_in_tao(self, scope: str) -> Optional[bt.Balance]:
+    def _fetch_emission_in_tao(self, scope: str, window_days_scope: str = None) -> Optional[bt.Balance]:
         """
         Fetch total emission amount in TAO for the period.
         
@@ -137,7 +140,10 @@ class ValidatorBurnDataSource(IBurnDataSource):
         you would need to multiply by the number of blocks in that period.
         
         Args:
-            scope: Scope identifier
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            window_days_scope: Scope identifier for fetching window_days.
+                             If not provided, uses scope (mech_scope).
+                             Config is stored per mechanism, so should use mech_scope.
         
         Returns:
             Emission amount in TAO per block, or None if unavailable
@@ -155,7 +161,10 @@ class ValidatorBurnDataSource(IBurnDataSource):
                 logging.warning(f"Invalid SubnetTaoInEmission value: {subnet_tao_in_emission_value}")
                 return None
 
-            window_days = self.window_days_getter(scope)
+            # Window days should be fetched for mech_scope (scope) because config is stored per mechanism
+            window_days_scope_to_use = window_days_scope if window_days_scope is not None else scope
+            window_days = self.window_days_getter(window_days_scope_to_use)
+            logging.debug(f"BurnDataSource._fetch_emission_in_tao: config_scope={scope}, window_days_scope={window_days_scope_to_use}, window_days={window_days}")
 
             block_window = timedelta(days=window_days).total_seconds() // bt.BLOCKTIME
 
@@ -222,10 +231,11 @@ class ValidatorBurnDataSource(IBurnDataSource):
             Total sales in USD, or None if unavailable
         """
         try:
-            # Use mech_scope for window_days_getter (config scope), fallback to scope if not provided
+            # Window days should be fetched for mech_scope because config is stored per mechanism
+            # Miner stats are fetched using campaign_scope (scope)
             config_scope = mech_scope if mech_scope is not None else scope
-            # Get window_days for this mech_scope to pass to the miner stats source
             window_days = self.window_days_getter(config_scope)
+            logging.info(f"BurnDataSource._fetch_total_sales_usd: campaign_scope={scope}, config_scope={config_scope}, window_days={window_days}")
             
             # Fetch miner stats using the injected provider with campaign scope
             miner_stats_list = self.miner_stats_source.fetch_window(scope, window_days)

@@ -47,12 +47,21 @@ class MechIdResolver:
         # If scope is in format "mech{id}", extract the ID directly
         if scope.startswith("mech") and len(scope) > 4:
             try:
-                return int(scope[4:])
+                mech_id = int(scope[4:])
+                from bittensor.utils.btlogging import logging
+                logging.debug(f"MechIdResolver: extracted mech_id={mech_id} from scope='{scope}'")
+                return mech_id
             except ValueError:
                 pass
         
         # Otherwise, look up in mapping (for backward compatibility)
-        return self.scope_to_mechid.get(scope, self.default_mechid)
+        mech_id = self.scope_to_mechid.get(scope, self.default_mechid)
+        from bittensor.utils.btlogging import logging
+        if scope in self.scope_to_mechid:
+            logging.debug(f"MechIdResolver: found mech_id={mech_id} for scope='{scope}' in mapping")
+        else:
+            logging.debug(f"MechIdResolver: scope='{scope}' not in mapping, using default_mechid={mech_id}")
+        return mech_id
 
 
 class BurnPercentageResolver:
@@ -140,6 +149,8 @@ class WindowDaysGetter:
     Getter for window days configuration per scope.
     
     Fetches window_days from external source dynamically.
+    Window days are fetched for mechanism scope (mech_scope, e.g., "mech0", "mech1")
+    because configuration is stored per mechanism in subnet_config.json.
     """
     
     def __init__(self, dynamic_config_source: IDynamicConfigSource):
@@ -156,11 +167,17 @@ class WindowDaysGetter:
         Get window days for a given scope.
         
         Args:
-            scope: Scope identifier
+            scope: Mechanism scope identifier (mech_scope, e.g., "mech0", "mech1")
         
         Returns:
             Window days (defaults to DEFAULT_WINDOW_DAYS if unavailable)
         """
         config = self.dynamic_config_source.get_config(scope)
-        return config.window_days if config is not None else DEFAULT_WINDOW_DAYS
+        window_days = config.window_days if config is not None else DEFAULT_WINDOW_DAYS
+        from bittensor.utils.btlogging import logging
+        if config is not None:
+            logging.debug(f"WindowDaysGetter: mech_scope='{scope}', window_days={window_days} (from config)")
+        else:
+            logging.debug(f"WindowDaysGetter: mech_scope='{scope}', window_days={window_days} (default)")
+        return window_days
 
