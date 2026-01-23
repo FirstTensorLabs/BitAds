@@ -1,0 +1,51 @@
+services:
+  validator:
+    image: ghcr.io/firsttensorlabs/bitads:main
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bitads-v3-validator
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    # Baseline environment with defaults. Values from .env will override via ${VAR:-default}.
+    # Defaults: NETUID=368 (testnet), use NETUID=16 for mainnet (finney)
+    environment:
+      PYTHONUNBUFFERED: "1"
+      NETUID: "${NETUID:-368}"
+      SUBTENSOR_NETWORK: "${SUBTENSOR_NETWORK:-test}"
+      WALLET_NAME: "${WALLET_NAME:-default}"
+      WALLET_HOTKEY: "${WALLET_HOTKEY:-default}"
+      LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
+      # Prometheus metrics / telemetry (enabled by default).
+      # To change port, set METRICS_PORT (default: 9100).
+      METRICS_PORT: "${METRICS_PORT:-9100}"
+    # Mount wallets so the container can access your Bittensor keys.
+    # Make sure you have your wallet files on the host in ./wallets
+    volumes:
+      - ~/.bittensor:/root/.bittensor
+    # Expose Prometheus metrics port for scraping
+    # Port mapping uses METRICS_PORT env var (defaults to 9100)
+    ports:
+      - "${METRICS_PORT:-9100}:${METRICS_PORT:-9100}"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; print('ok')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_INCLUDE_STOPPED=false
+    # Only watch containers with the watchtower.enable label
+    command: --label-enable
+
+  

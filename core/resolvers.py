@@ -1,0 +1,183 @@
+"""
+Resolvers for validator configuration.
+
+This module contains resolver functions that map scopes to configuration values.
+Following Single Responsibility Principle - each resolver has one clear purpose.
+"""
+from typing import Callable, Dict, Optional
+
+from core.adapters.burn_data_source import IBurnDataSource
+from core.adapters.dynamic_config_source import IDynamicConfigSource
+from core.burn_calculator import get_burn_percentage_from_sales
+from core.constants import DEFAULT_MECHID, DEFAULT_WINDOW_DAYS
+
+
+class MechIdResolver:
+    """
+    Resolves mechanism ID for a given scope.
+    
+    If scope is in format "mech{id}", extracts the ID directly.
+    Otherwise, uses a mapping of scope -> mech_id loaded from campaigns.
+    """
+    
+    def __init__(self, scope_to_mechid: Dict[str, int], default_mechid: int = DEFAULT_MECHID):
+        """
+        Initialize mechid resolver.
+        
+        Args:
+            scope_to_mechid: Dictionary mapping scope strings to mechanism IDs
+            default_mechid: Default mechanism ID if scope not found in mapping
+        """
+        self.scope_to_mechid = scope_to_mechid
+        self.default_mechid = default_mechid
+    
+    def __call__(self, scope: str) -> int:
+        """
+        Resolve mechanism ID for a scope.
+        
+        If scope is in format "mech{id}", extracts the ID directly.
+        Otherwise, looks up in scope_to_mechid mapping.
+        
+        Args:
+            scope: Scope identifier (e.g., "mech1", "mech0", "campaign:123")
+        
+        Returns:
+            Mechanism ID
+        """
+        # If scope is in format "mech{id}", extract the ID directly
+        if scope.startswith("mech") and len(scope) > 4:
+            try:
+                mech_id = int(scope[4:])
+                from bittensor.utils.btlogging import logging
+                logging.debug(f"MechIdResolver: extracted mech_id={mech_id} from scope='{scope}'")
+                return mech_id
+            except ValueError:
+                pass
+        
+        # Otherwise, look up in mapping (for backward compatibility)
+        mech_id = self.scope_to_mechid.get(scope, self.default_mechid)
+        from bittensor.utils.btlogging import logging
+        if scope in self.scope_to_mechid:
+            logging.debug(f"MechIdResolver: found mech_id={mech_id} for scope='{scope}' in mapping")
+        else:
+            logging.debug(f"MechIdResolver: scope='{scope}' not in mapping, using default_mechid={mech_id}")
+        return mech_id
+
+
+class BurnPercentageResolver:
+    """
+    Resolves burn percentage for a given scope based on sales-to-emissions ratio.
+    
+    This resolver calculates the burn percentage to ensure miners don't become
+    over-profitable when emissions exceed the value they generate.
+    """
+    
+    def __init__(self, burn_data_source: IBurnDataSource):
+        """
+        Initialize burn percentage resolver.
+        
+        Args:
+            burn_data_source: Data source for fetching burn calculation data
+        """
+        self.burn_data_source = burn_data_source
+    
+    def __call__(self, scope: str, miner_stats_scope: str = None) -> Optional[float]:
+        """
+        Get burn percentage for a given scope.
+        
+        Calculation logic:
+        1. Get emission amount in TAO for the period
+        2. Get TAO/USD price and calculate emission_in_usd
+        3. Get total sales in USD from miners
+        4. Get target sales-to-emission ratio (e.g., 1.0 for 1:1, 1.5 for 1.5:1)
+        5. Calculate burn percentage:
+           - If emissions <= sales * ratio: burn = 0%
+           - Otherwise: burn = (emissions - sales * ratio) / emissions * 100%
+        
+        Args:
+            scope: Scope identifier for config (e.g., "mech0", "mech1")
+            miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
+                              If not provided, uses scope.
+        
+        Returns:
+            Burn percentage (0.0-100.0) or None to disable burn
+        """
+        burn_data = self.burn_data_source.get_burn_data(scope, miner_stats_scope=miner_stats_scope)
+        
+        if burn_data is None:
+            return None
+        
+        return get_burn_percentage_from_sales(
+            emission_in_tao=burn_data.emission_in_tao,
+            tao_price_usd=burn_data.tao_price_usd,
+            total_sales_usd=burn_data.total_sales_usd,
+            sales_emission_ratio=burn_data.sales_emission_ratio,
+        )
+
+
+class FixedBurnPercentageResolver:
+    """
+    Resolves burn percentage to a fixed value for all scopes.
+    
+    Useful for testing, especially on testnet where emissions might be 0.
+    """
+    
+    def __init__(self, burn_percentage: float):
+        """
+        Initialize fixed burn percentage resolver.
+        
+        Args:
+            burn_percentage: Fixed burn percentage to return (0.0-100.0) or None to disable burn
+        """
+        self.burn_percentage = burn_percentage
+    
+    def __call__(self, scope: str) -> Optional[float]:
+        """
+        Get fixed burn percentage for a given scope.
+        
+        Args:
+            scope: Scope identifier (ignored, returns fixed value)
+        
+        Returns:
+            Fixed burn percentage or None
+        """
+        return self.burn_percentage
+
+
+class WindowDaysGetter:
+    """
+    Getter for window days configuration per scope.
+    
+    Fetches window_days from external source dynamically.
+    Window days are fetched for mechanism scope (mech_scope, e.g., "mech0", "mech1")
+    because configuration is stored per mechanism in subnet_config.json.
+    """
+    
+    def __init__(self, dynamic_config_source: IDynamicConfigSource):
+        """
+        Initialize window days getter.
+        
+        Args:
+            dynamic_config_source: Source for fetching dynamic configuration
+        """
+        self.dynamic_config_source = dynamic_config_source
+    
+    def __call__(self, scope: str) -> int:
+        """
+        Get window days for a given scope.
+        
+        Args:
+            scope: Mechanism scope identifier (mech_scope, e.g., "mech0", "mech1")
+        
+        Returns:
+            Window days (defaults to DEFAULT_WINDOW_DAYS if unavailable)
+        """
+        config = self.dynamic_config_source.get_config(scope)
+        window_days = config.window_days if config is not None else DEFAULT_WINDOW_DAYS
+        from bittensor.utils.btlogging import logging
+        if config is not None:
+            logging.debug(f"WindowDaysGetter: mech_scope='{scope}', window_days={window_days} (from config)")
+        else:
+            logging.debug(f"WindowDaysGetter: mech_scope='{scope}', window_days={window_days} (default)")
+        return window_days
+
