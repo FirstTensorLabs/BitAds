@@ -64,10 +64,13 @@ class ValidatorCampaignSource(ICampaignSource):
                 # Map campaign_id from API to scope for Campaign model
                 campaign_id = campaign_data.get("campaign_id")
                 mech_id = campaign_data.get("mech_id")
-                if campaign_id is not None and mech_id is not None:
+                status = campaign_data.get("status", 1)  # Default to 1 (active) if not specified
+                
+                # Only include campaigns with status = 1 (active)
+                if campaign_id is not None and mech_id is not None and status == 1:
                     campaigns.append(Campaign(scope=campaign_id, mech_id=mech_id))
             
-            logging.info(f"Fetched {len(campaigns)} campaigns from API")
+            logging.info(f"Fetched {len(campaigns)} active campaigns from API (status=1)")
             return campaigns
             
         except requests.exceptions.RequestException as e:
@@ -126,10 +129,13 @@ class StorageCampaignSource(ICampaignSource):
             for index, campaign_data in enumerate(campaigns_data):
                 campaign_id = campaign_data.get("campaign_id")
                 mech_id = campaign_data.get("mech_id")
-                if campaign_id is not None:
+                status = campaign_data.get("status", 1)  # Default to 1 (active) if not specified
+                
+                # Only include campaigns with status = 1 (active)
+                if campaign_id is not None and status == 1:
                     campaigns.append(Campaign(scope=campaign_id, mech_id=mech_id))
             
-            logging.info(f"Fetched {len(campaigns)} campaigns from storage")
+            logging.info(f"Fetched {len(campaigns)} active campaigns from storage (status=1)")
             return campaigns
             
         except requests.exceptions.RequestException as e:

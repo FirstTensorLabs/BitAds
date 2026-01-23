@@ -113,7 +113,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
         
         emission_in_tao = self._fetch_emission_in_tao(scope)
         tao_price_usd = self._fetch_tao_price_usd()
-        total_sales_usd = self._fetch_total_sales_usd(stats_scope)
+        total_sales_usd = self._fetch_total_sales_usd(stats_scope, mech_scope=scope)
         sales_emission_ratio = self._fetch_sales_emission_ratio(scope)
 
         # Return None if any required data is missing
@@ -205,7 +205,7 @@ class ValidatorBurnDataSource(IBurnDataSource):
             logging.warning(f"Failed to parse TAO price API response: {e}")
             return None
     
-    def _fetch_total_sales_usd(self, scope: str) -> Optional[float]:
+    def _fetch_total_sales_usd(self, scope: str, mech_scope: str = None) -> Optional[float]:
         """
         Fetch total sales in USD from miner-stats API.
         
@@ -214,16 +214,20 @@ class ValidatorBurnDataSource(IBurnDataSource):
         calling an external HTTP API directly.
         
         Args:
-            scope: Scope identifier
+            scope: Scope identifier for fetching miner stats (e.g., campaign_id)
+            mech_scope: Scope identifier for config (e.g., "mech0", "mech1").
+                       If not provided, uses scope.
         
         Returns:
             Total sales in USD, or None if unavailable
         """
         try:
-            # Get window_days for this scope to pass to the miner stats source
-            window_days = self.window_days_getter(scope)
+            # Use mech_scope for window_days_getter (config scope), fallback to scope if not provided
+            config_scope = mech_scope if mech_scope is not None else scope
+            # Get window_days for this mech_scope to pass to the miner stats source
+            window_days = self.window_days_getter(config_scope)
             
-            # Fetch miner stats using the injected provider
+            # Fetch miner stats using the injected provider with campaign scope
             miner_stats_list = self.miner_stats_source.fetch_window(scope, window_days)
             if not miner_stats_list:
                 logging.warning(f"No miner stats available to compute total_sales_usd for scope {scope}")

@@ -16,7 +16,8 @@ class MechIdResolver:
     """
     Resolves mechanism ID for a given scope.
     
-    Uses a mapping of scope -> mech_id loaded from campaigns.
+    If scope is in format "mech{id}", extracts the ID directly.
+    Otherwise, uses a mapping of scope -> mech_id loaded from campaigns.
     """
     
     def __init__(self, scope_to_mechid: Dict[str, int], default_mechid: int = DEFAULT_MECHID):
@@ -34,12 +35,23 @@ class MechIdResolver:
         """
         Resolve mechanism ID for a scope.
         
+        If scope is in format "mech{id}", extracts the ID directly.
+        Otherwise, looks up in scope_to_mechid mapping.
+        
         Args:
-            scope: Scope identifier (e.g., "network", "campaign:123")
+            scope: Scope identifier (e.g., "mech1", "mech0", "campaign:123")
         
         Returns:
             Mechanism ID
         """
+        # If scope is in format "mech{id}", extract the ID directly
+        if scope.startswith("mech") and len(scope) > 4:
+            try:
+                return int(scope[4:])
+            except ValueError:
+                pass
+        
+        # Otherwise, look up in mapping (for backward compatibility)
         return self.scope_to_mechid.get(scope, self.default_mechid)
 
 

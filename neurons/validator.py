@@ -187,10 +187,20 @@ class Validator:
             dynamic_config_source=self.dynamic_config_source
         )
         self.miner_stats_source = StorageMinerStatsSource(network=network)
+        
+        # Build mapping from mech_scope to campaign_scope for P95 provider
+        # This allows P95 provider to fetch miner stats using campaign_id when scope is mech_scope
+        campaigns = self.campaign_source.get_campaigns()
+        mech_scope_to_campaign_scope = {
+            f"mech{campaign.mech_id}": campaign.scope 
+            for campaign in campaigns
+        }
+        
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
             miner_stats_source=self.miner_stats_source,
             dynamic_config_source=self.dynamic_config_source,
+            mech_scope_to_campaign_scope=mech_scope_to_campaign_scope,
         )
         
         # Window days getter (fetches from dynamic_config_source per scope)
@@ -210,8 +220,7 @@ class Validator:
             miner_stats_source=self.miner_stats_source,
         )
         
-        # Build mechid mapping from campaigns
-        campaigns = self.campaign_source.get_campaigns()
+        # Build mechid mapping from campaigns (reuse campaigns already fetched above)
         scope_to_mechid = {campaign.scope: campaign.mech_id for campaign in campaigns}
         
         # Resolvers
