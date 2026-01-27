@@ -13,7 +13,7 @@ NETUIDS = {
 
 # Campaign storage base URLs by network
 NETWORK_BASE_URLS = {
-    NETWORKS[0]: None,
+    NETWORKS[0]: "https://storage.bitads.ai",
     NETWORKS[1]: "https://dev-storage.bitads.ai",
 }
 

@@ -173,6 +173,7 @@ This is the recommended method for Docker users because your settings are saved 
    | `WALLET_NAME` | `my_wallet` | `my_wallet` | Your wallet name |
    | `WALLET_HOTKEY` | `my_hotkey` | `my_hotkey` | Your hotkey name |
    | `LOGGING_LEVEL` | `info` | `info` | Log verbosity |
+   | `METRICS_PORT` | `9100` | `9100` | Prometheus metrics port (optional) |
 
    Example `.env` file for mainnet:
    ```env
@@ -181,6 +182,7 @@ This is the recommended method for Docker users because your settings are saved 
    WALLET_NAME=my_wallet
    WALLET_HOTKEY=my_hotkey
    LOGGING_LEVEL=info
+   METRICS_PORT=9100
    ```
 
    Replace `my_wallet` and `my_hotkey` with your actual wallet name and hotkey.
@@ -297,6 +299,114 @@ Keep an eye on these metrics:
 | **Weight submissions** | Success rate of weight updates | Should be 100% or close to it |
 | **Errors** | Any issues that need attention | Should be minimal or zero |
 | **P95 values** | Current percentile thresholds | Should update regularly |
+
+### Prometheus Metrics (Recommended)
+
+The validator exposes Prometheus metrics for monitoring validator status, performance, and version information. This is **highly recommended** for production deployments.
+
+#### Enabling Metrics
+
+Metrics are enabled by default and exposed on port `9100`. You can customize the port by setting the `METRICS_PORT` environment variable:
+
+**In `.env` file (Docker)**:
+```env
+METRICS_PORT=9100
+```
+
+**Via command line (Docker)**:
+```sh
+METRICS_PORT=9100 docker compose up -d
+```
+
+**Via command line (Manual)**:
+```sh
+METRICS_PORT=9100 python neurons/validator.py --netuid 16 --subtensor.network finney ...
+```
+
+#### Exposing the Metrics Port
+
+**For Docker Compose**: The metrics port is automatically exposed in the `docker-compose.yml` file. If you need to change the port, update both the `METRICS_PORT` environment variable and the port mapping in `docker-compose.yml`:
+
+```yaml
+ports:
+  - "${METRICS_PORT:-9100}:${METRICS_PORT:-9100}"
+```
+
+**For Manual Setup**: Ensure the port is accessible. You may need to:
+- Open the port in your firewall
+- Configure port forwarding if behind a router
+- Use a reverse proxy if needed
+
+#### Available Metrics
+
+The validator exposes the following Prometheus metrics:
+
+| Metric Name | Type | Description | Labels |
+|-------------|------|-------------|--------|
+| `validator_version` | Gauge | Validator version as integer (converted from semantic version) | `hotkey`, `version_string` |
+| `validator_loop_iterations_total` | Counter | Total number of main loop iterations | `hotkey` |
+| `validator_sync_and_process_duration_seconds` | Histogram | Duration of sync and process cycle | `hotkey` |
+| `validator_last_process_success` | Gauge | 1 if last cycle succeeded, 0 otherwise | `hotkey` |
+| `validator_active_campaigns` | Gauge | Number of active campaigns processed | `hotkey` |
+| `validator_weights_sets_total` | Counter | Total successful weight-setting operations | `hotkey`, `scope` |
+| `validator_weights_errors_total` | Counter | Total errors during weight-setting | `hotkey`, `scope` |
+
+#### Accessing Metrics
+
+Once the validator is running, you can access metrics at:
+
+```
+http://localhost:9100/metrics
+```
+
+Or from another machine:
+```
+http://<validator-ip>:9100/metrics
+```
+
+#### Example Metrics Output
+
+```
+# Validator version (recommended to monitor for version tracking)
+validator_version{hotkey="5F3sa2TJAWMqDhXG6jhV4N8ko9SxwGy8TpaNS1repo5EYjQX",version_string="0.0.1"} 1
+
+# Loop iterations
+validator_loop_iterations_total{hotkey="5F3sa2TJAWMqDhXG6jhV4N8ko9SxwGy8TpaNS1repo5EYjQX"} 42
+
+# Process duration
+validator_sync_and_process_duration_seconds_bucket{hotkey="5F3sa2TJAWMqDhXG6jhV4N8ko9SxwGy8TpaNS1repo5EYjQX",le="5.0"} 40
+
+# Last process success
+validator_last_process_success{hotkey="5F3sa2TJAWMqDhXG6jhV4N8ko9SxwGy8TpaNS1repo5EYjQX"} 1
+
+# Active campaigns
+validator_active_campaigns{hotkey="5F3sa2TJAWMqDhXG6jhV4N8ko9SxwGy8TpaNS1repo5EYjQX"} 3
+```
+
+#### Setting Up Prometheus Scraping
+
+To scrape these metrics with Prometheus, add a job to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'bitads-validator'
+    static_configs:
+      - targets: ['<validator-ip>:9100']
+        labels:
+          instance: 'my-validator'
+          network: 'mainnet'
+```
+
+#### Disabling Metrics
+
+If you need to disable metrics (not recommended), you can:
+
+**Via command line**:
+```sh
+python neurons/validator.py --disable-telemetry --netuid 16 ...
+```
+
+**Note**: Metrics are valuable for monitoring validator health and version tracking. We strongly recommend keeping them enabled.
 
 ---
 

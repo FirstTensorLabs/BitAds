@@ -1,6 +1,6 @@
 from typing import Callable, Dict, List, Optional
 
-from bittensor.core.settings import DEFAULT_PERIOD, version_as_int
+from bittensor.core.settings import DEFAULT_PERIOD
 from bittensor.core.subtensor import commit_timelocked_weights_extrinsic, set_weights_extrinsic
 from bittensor.core.types import UIDs, Weights
 from bittensor.utils.btlogging import logging
@@ -8,6 +8,7 @@ import bittensor as bt
 from bitads_v3_core.app.ports import IScoreSink
 from bitads_v3_core.domain.models import ScoreResult
 from bitads_v3_core.domain.creator_burn import apply_creator_burn
+from core import version_as_int
 
 
 class ValidatorScoreSink(IScoreSink):
@@ -91,7 +92,6 @@ class ValidatorScoreSink(IScoreSink):
                               If not provided, uses scope.
         """
         mechid = self.mechid_resolver(scope)
-        logging.info(f"ScoreSink.publish: scope={scope}, resolved mechid={mechid}, miner_stats_scope={miner_stats_scope}")
         logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
 
         # Build UID->score map
@@ -121,13 +121,7 @@ class ValidatorScoreSink(IScoreSink):
         # Get burn percentage for this scope (if resolver is provided)
         burn_percentage = None
         if self.burn_percentage_resolver is not None:
-            # Check if resolver accepts miner_stats_scope parameter
-            import inspect
-            sig = inspect.signature(self.burn_percentage_resolver)
-            if 'miner_stats_scope' in sig.parameters:
-                burn_percentage = self.burn_percentage_resolver(scope, miner_stats_scope=miner_stats_scope)
-            else:
-                burn_percentage = self.burn_percentage_resolver(scope)
+            burn_percentage = self.burn_percentage_resolver(scope)
         
         # Calculate weights before burn (normalized)
         total = sum(miner_scores)
@@ -189,7 +183,7 @@ class ValidatorScoreSink(IScoreSink):
             netuid: int,
             uids: UIDs,
             weights: Weights,
-            version_key: int = version_as_int,
+            version_key: int = None,
             wait_for_inclusion: bool = False,
             wait_for_finalization: bool = False,
             max_retries: int = 5,
@@ -201,6 +195,10 @@ class ValidatorScoreSink(IScoreSink):
         """
         Set weights on-chain for the given scope.
         """
+        # Use project version if version_key not provided
+        if version_key is None:
+            version_key = version_as_int
+        
         retries = 0
         success = False
         message = "No attempt made. Perhaps it is too soon to commit weights!"

@@ -11,6 +11,7 @@ from bittensor.utils.btlogging import logging
 from bitads_v3_core.app.scoring import ScoreCalculator
 from bitads_v3_core.domain.models import ScoreResult
 
+from core import __version__, version_as_int
 from core.constants import (
     NETUIDS,
     DEFAULT_USE_SOFT_CAP,
@@ -107,6 +108,7 @@ class Validator:
         self.metric_active_campaigns = None
         self.metric_weights_sets_total = None
         self.metric_weights_errors_total = None
+        self.metric_version = None
 
         # Allow operators to disable telemetry completely via config flag.
         if getattr(self.config, "disable_telemetry", False):
@@ -170,6 +172,15 @@ class Validator:
             "Total number of errors during weight-setting operations.",
             ["hotkey", "scope"],
         )
+        
+        # Version metric
+        self.metric_version = Gauge(
+            "validator_version",
+            "Validator version as integer (converted from semantic version string).",
+            ["hotkey", "version_string"],
+        ).labels(hotkey=self.hotkey_address, version_string=__version__)
+        # Set the version value
+        self.metric_version.set(version_as_int)
     
     def _initialize_core_components(self):
         """Initialize all core components following dependency injection."""
