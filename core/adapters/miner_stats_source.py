@@ -16,14 +16,9 @@ class ValidatorMinerStatsSource(IMinerStatsSource):
         Initialize miner stats source.
         
         Args:
-            api_base_url: Base URL for the API. If not provided, must be set via API_BASE_URL env var.
-        
-        Raises:
-            ValueError: If API_BASE_URL is not provided and not set in environment.
+            api_base_url: Optional base URL for the API. If not provided, will try API_BASE_URL env var.
         """
         self.api_base_url = api_base_url or os.getenv("API_BASE_URL")
-        if not self.api_base_url:
-            raise ValueError("API_BASE_URL must be set as environment variable or passed as parameter")
 
     def fetch_window(self, scope: str, window_days: int = DEFAULT_WINDOW_DAYS) -> List[Tuple[str, MinerWindowStats]]:
         """
@@ -36,6 +31,11 @@ class ValidatorMinerStatsSource(IMinerStatsSource):
         Returns:
             List of tuples (miner_id, MinerWindowStats)
         """
+        # If no API base URL is configured, gracefully return an empty list
+        if not self.api_base_url:
+            logging.info("ValidatorMinerStatsSource: no API_BASE_URL configured; returning empty miner stats list")
+            return []
+
         try:
             url = f"{self.api_base_url}/miner-stats"
             response = requests.get(

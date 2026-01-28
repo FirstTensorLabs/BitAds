@@ -99,15 +99,10 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         Initialize dynamic config source.
         
         Args:
-            api_base_url: Base URL for the API. If not provided, must be set via API_BASE_URL env var.
+            api_base_url: Optional base URL for the API. If not provided, will try API_BASE_URL env var.
             cache_ttl: Cache time-to-live in seconds. Defaults to 300 (5 minutes).
-        
-        Raises:
-            ValueError: If API_BASE_URL is not provided and not set in environment.
         """
         self.api_base_url = api_base_url or os.getenv("API_BASE_URL")
-        if not self.api_base_url:
-            raise ValueError("API_BASE_URL must be set as environment variable or passed as parameter")
         self.cache_ttl = cache_ttl
         # Cache structure: {scope: (config_data, timestamp)}
         self._cache: Dict[str, Tuple[dict, float]] = {}
@@ -124,6 +119,11 @@ class ValidatorDynamicConfigSource(IDynamicConfigSource):
         Returns:
             Config dictionary for the specific scope, or None if unavailable
         """
+        # If no API base URL is configured, gracefully return None
+        if not self.api_base_url:
+            logging.info("ValidatorDynamicConfigSource: no API_BASE_URL configured; returning no config")
+            return None
+
         current_time = time.time()
         
         # Check cache first
