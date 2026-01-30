@@ -17,17 +17,15 @@ services:
       WALLET_NAME: "${WALLET_NAME:-default}"
       WALLET_HOTKEY: "${WALLET_HOTKEY:-default}"
       LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
-      # Prometheus metrics / telemetry (enabled by default).
-      # To change port, set METRICS_PORT (default: 9100).
-      METRICS_PORT: "${METRICS_PORT:-9100}"
+      # Axon port (used for metrics server and axon). Set AXON_PORT to override (default: 9100).
+      AXON_PORT: "${AXON_PORT:-9100}"
     # Mount wallets so the container can access your Bittensor keys.
     # Make sure you have your wallet files on the host in ./wallets
     volumes:
       - ~/.bittensor:/root/.bittensor
-    # Expose Prometheus metrics port for scraping
-    # Port mapping uses METRICS_PORT env var (defaults to 9100)
+    # Expose axon port (metrics and axon server)
     ports:
-      - "${METRICS_PORT:-9100}:${METRICS_PORT:-9100}"
+      - "${AXON_PORT:-9100}:${AXON_PORT:-9100}"
     healthcheck:
       test: ["CMD", "python", "-c", "import os; print('ok')"]
       interval: 30s

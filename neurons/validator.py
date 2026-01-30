@@ -4,6 +4,8 @@ import time
 import traceback
 from typing import List
 
+from bittensor.core.subtensor import Subtensor
+from bittensor import Axon, Wallet
 from bittensor.core.config import Config
 from bittensor.core.settings import BLOCKTIME, NETWORKS
 from bittensor.utils.btlogging import logging
@@ -97,8 +99,8 @@ class Validator:
         Optionally start Prometheus metrics exporter and register core metrics.
         
         Metrics are enabled by default, but can be disabled via the
-        --disable-telemetry flag. The metrics port can be configured via the
-        METRICS_PORT environment variable, defaulting to 9100.
+        --disable-telemetry flag. The metrics server uses config.axon.port
+        (e.g. --axon.port or AXON_PORT).
         
         If prometheus_client is not available, metrics are disabled gracefully.
         """
@@ -111,12 +113,20 @@ class Validator:
         self.metric_version = None
 
         # Allow operators to disable telemetry completely via config flag.
+        # When disabled, we skip metrics and do not serve the axon.
         if getattr(self.config, "disable_telemetry", False):
-            logging.info("Telemetry disabled via --disable-telemetry flag.")
+            logging.info("Telemetry disabled via --disable-telemetry flag (metrics and axon not served).")
             return
 
-        # Choose metrics port: env override or sensible default.
-        metrics_port = os.getenv("METRICS_PORT", "9100")
+        # Use axon port from config for metrics server.
+        raw_port = getattr(self.config.axon, "port", 9100)
+        if raw_port is None:
+            raw_port = 9100
+        try:
+            port = int(raw_port)
+        except (ValueError, TypeError):
+            logging.warning(f"Invalid axon.port value '{raw_port}', metrics disabled.")
+            return
 
         if not _PROMETHEUS_AVAILABLE:
             logging.warning(
@@ -126,13 +136,9 @@ class Validator:
             return
 
         try:
-            port = int(metrics_port)
-        except ValueError:
-            logging.warning(f"Invalid METRICS_PORT value '{metrics_port}', metrics disabled.")
-            return
-
-        try:
             start_http_server(port)
+            axon = Axon(wallet=self.wallet, config=self.config)
+            self.subtensor.serve_axon(self.config.netuid, axon)
             logging.info(f"Started Prometheus metrics server on port {port}")
         except Exception as e:
             logging.warning(f"Failed to start Prometheus metrics server on port {port}: {e}")
@@ -297,6 +303,7 @@ class Validator:
     def _get_config(self) -> Config:
         """Get Bittensor configuration."""
         parser = argparse.ArgumentParser()
+
         parser.add_argument(
             "--netuid", type=int, default=NETUIDS[NETWORKS[0]], help="The chain subnet uid."
         )
@@ -311,11 +318,12 @@ class Validator:
             action="store_true",
             help="Disable Prometheus metrics / telemetry (enabled by default).",
         )
-        from bittensor.core.subtensor import Subtensor
-        from bittensor_wallet import Wallet
+      
         Subtensor.add_args(parser)
-        logging.add_args(parser)
         Wallet.add_args(parser)
+        Axon.add_args(parser)
+        logging.add_args(parser)
+        
         
         config = Config(parser)
         
