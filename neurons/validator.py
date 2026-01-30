@@ -521,7 +521,12 @@ class Validator:
 
         if getattr(self, "metric_active_campaigns", None) is not None:
             self.metric_active_campaigns.set(len(campaigns))
-        
+
+        if not campaigns:
+            logging.info("Zero active campaigns; skipping weight update. Sleeping 60s before next run.")
+            time.sleep(60)
+            return
+
         for campaign in campaigns:
             mech_scope = f"mech{campaign.mech_id}"
             try:
