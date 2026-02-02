@@ -173,7 +173,7 @@ This is the recommended method for Docker users because your settings are saved 
    | `WALLET_NAME` | `my_wallet` | `my_wallet` | Your wallet name |
    | `WALLET_HOTKEY` | `my_hotkey` | `my_hotkey` | Your hotkey name |
    | `LOGGING_LEVEL` | `info` | `info` | Log verbosity |
-   | `METRICS_PORT` | `9100` | `9100` | Prometheus metrics port (optional) |
+   | `AXON_PORT` | `9100` | `9100` | Axon / metrics port (optional) |
 
    Example `.env` file for mainnet:
    ```env
@@ -182,7 +182,7 @@ This is the recommended method for Docker users because your settings are saved 
    WALLET_NAME=my_wallet
    WALLET_HOTKEY=my_hotkey
    LOGGING_LEVEL=info
-   METRICS_PORT=9100
+   AXON_PORT=9100
    ```
 
    Replace `my_wallet` and `my_hotkey` with your actual wallet name and hotkey.
@@ -306,30 +306,30 @@ The validator exposes Prometheus metrics for monitoring validator status, perfor
 
 #### Enabling Metrics
 
-Metrics are enabled by default and exposed on port `9100`. You can customize the port by setting the `METRICS_PORT` environment variable:
+Metrics are enabled by default and exposed on `config.axon.port` (default `9100`). You can customize this port via the axon configuration:
 
-**In `.env` file (Docker)**:
+**In `.env` file (Docker)** (recommended):
 ```env
-METRICS_PORT=9100
+AXON_PORT=9100
 ```
 
 **Via command line (Docker)**:
 ```sh
-METRICS_PORT=9100 docker compose up -d
+AXON_PORT=9100 docker compose up -d
 ```
 
 **Via command line (Manual)**:
 ```sh
-METRICS_PORT=9100 python neurons/validator.py --netuid 16 --subtensor.network finney ...
+python neurons/validator.py --netuid 16 --subtensor.network finney --axon.port 9100 ...
 ```
 
 #### Exposing the Metrics Port
 
-**For Docker Compose**: The metrics port is automatically exposed in the `docker-compose.yml` file. If you need to change the port, update both the `METRICS_PORT` environment variable and the port mapping in `docker-compose.yml`:
+**For Docker Compose**: The metrics / axon port is automatically exposed in the `docker-compose.yml` file. If you need to change the port, update both the `AXON_PORT` environment variable and the port mapping in `docker-compose.yml`:
 
 ```yaml
 ports:
-  - "${METRICS_PORT:-9100}:${METRICS_PORT:-9100}"
+  - "${AXON_PORT:-9100}:${AXON_PORT:-9100}"
 ```
 
 **For Manual Setup**: Ensure the port is accessible. You may need to:
@@ -406,7 +406,9 @@ If you need to disable metrics (not recommended), you can:
 python neurons/validator.py --disable-telemetry --netuid 16 ...
 ```
 
-**Note**: Metrics are valuable for monitoring validator health and version tracking. We strongly recommend keeping them enabled.
+When telemetry is disabled, the validator will **not start the metrics server or serve an axon**, so it will not accept incoming RPC requests from miners.
+
+**Note**: Metrics are valuable for monitoring validator health and version tracking. We strongly recommend keeping them enabled in production.
 
 ---
 
