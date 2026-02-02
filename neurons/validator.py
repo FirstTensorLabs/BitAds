@@ -438,46 +438,12 @@ class Validator:
         
         # Compute scores for this campaign
         score_results = self.compute_scores_for_campaign(campaign, score_calculator)
-        # Delegate publishing (which sets weights) to the score sink
-        # Pass campaign.scope for burn calculation which needs it for miner stats
-        self.score_sink.publish(score_results, mech_scope, miner_stats_scope=campaign.scope)
+        # Delegate publishing (which sets weights) to the score sink.
+        # Empty score_results -> sink uses burn (owner only). If we have results but set_weights fails, leave as is.
+        success, message = self.score_sink.publish(score_results, mech_scope, miner_stats_scope=campaign.scope)
+        if not success:
+            logging.warning(f"Set weights failed for campaign {campaign.scope}; leaving weights as is: {message}")
     
-    def set_weights(self) -> None:
-        """
-        One-time weight setting for all active campaigns.
-        
-        Syncs metagraph, updates percentiles, and sets weights for all campaigns.
-        Does not check timing constraints - useful for manual updates or testing.
-        """
-        logging.info("Starting one-time weight setting...")
-        
-        # Sync metagraph to get latest state
-        logging.info("Syncing metagraph...")
-        self.metagraph.sync()
-        
-        # Update percentiles before computing scores
-        logging.info("Updating percentiles...")
-        self.p95_provider.update_percentiles()
-        
-        # Get all active campaigns
-        campaigns = self.get_campaigns()
-        logging.info(f"Found {len(campaigns)} active campaigns: {campaigns}")
-        
-        if not campaigns:
-            logging.warning("No active campaigns found.")
-            return
-        
-        # Set weights for each campaign
-        for campaign in campaigns:
-            try:
-                self.set_weights_for_campaign(campaign)
-                logging.success(f"Successfully set weights for {campaign.scope}")
-            except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope}: {e}")
-                traceback.print_exc()
-        
-        logging.success("Weight setting completed.")
-
     def run(self):
         """Main validation loop."""
         logging.info("Starting validator loop.")
@@ -523,8 +489,12 @@ class Validator:
             self.metric_active_campaigns.set(len(campaigns))
 
         if not campaigns:
-            logging.info("Zero active campaigns; skipping weight update. Sleeping 60s before next run.")
-            time.sleep(60)
+            logging.info("Zero active campaigns; setting weights to subnet owner (burn) then sleeping 60s.")
+            success, message = self.score_sink.set_weights_to_owner_only(DEFAULT_MECHID)
+            if success:
+                logging.info(f"Set weights to owner (burn): {message}")
+            else:
+                logging.warning(f"Set weights to owner failed: {message}")
             return
 
         for campaign in campaigns:

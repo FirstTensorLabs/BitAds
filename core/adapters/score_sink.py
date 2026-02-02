@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from bittensor.core.settings import DEFAULT_PERIOD
 from bittensor.core.subtensor import commit_timelocked_weights_extrinsic, set_weights_extrinsic
@@ -78,7 +78,34 @@ class ValidatorScoreSink(IScoreSink):
         if owner_index is not None:
             weights[owner_index] = 1.0
 
-    def publish(self, scores: List[ScoreResult], scope: str, miner_stats_scope: str = None) -> None:
+    def set_weights_to_owner_only(self, mechid: int = 0) -> Tuple[bool, str]:
+        """
+        Set weights to subnet owner only (burn behaviour). Used when there are no
+        campaigns or when normal weight setting fails.
+        
+        Args:
+            mechid: Mechanism ID for the weight set (use DEFAULT_MECHID when no campaigns).
+        
+        Returns:
+            (success, message) from the set_weights extrinsic.
+        """
+        owner_index = self._get_owner_index()
+        if owner_index is None:
+            logging.warning("Cannot set weights to owner: owner UID not found")
+            return False, "Owner UID not found"
+        weights = [0.0] * len(self.metagraph.uids)
+        weights[owner_index] = 1.0
+        logging.info(f"Setting weights to subnet owner only (burn behaviour), mechid={mechid}")
+        return self._set_weights(
+            wallet=self.wallet,
+            netuid=self.netuid,
+            uids=self.metagraph.uids,
+            weights=weights,
+            mechid=mechid,
+            wait_for_inclusion=True,
+        )
+
+    def publish(self, scores: List[ScoreResult], scope: str, miner_stats_scope: str = None) -> Tuple[bool, str]:
         """
         Publish score results by setting weights on-chain for the given scope.
         Assumes miner_id is a hotkey string; maps hotkeys to UIDs via metagraph.
@@ -90,9 +117,17 @@ class ValidatorScoreSink(IScoreSink):
             scope: Scope identifier for config (e.g., "mech0", "mech1")
             miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
                               If not provided, uses scope.
+        
+        Returns:
+            (success, message) from the set_weights extrinsic.
         """
         mechid = self.mechid_resolver(scope)
         logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
+
+        # Empty score list: use burn (set weights to subnet owner only)
+        if not scores or all(score.score == 0.0 for score in scores):
+            logging.info(f"Empty score results for scope {scope}; using burn (set weights to subnet owner).")
+            return self.set_weights_to_owner_only(mechid)
 
         # Build UID->score map
         # miner_id is a hotkey string, need to find corresponding UID
@@ -167,7 +202,7 @@ class ValidatorScoreSink(IScoreSink):
             weights = weights_before_burn
         
         logging.info(f"[blue]Setting weights for {scope} (mechid={mechid}):[/blue] {weights}")
-        result = self._set_weights(
+        success, message = self._set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
             uids=self.metagraph.uids,
@@ -175,7 +210,8 @@ class ValidatorScoreSink(IScoreSink):
             mechid=mechid,
             wait_for_inclusion=True,
         )
-        logging.info(f"Set weights result for {scope}: {result}")
+        logging.info(f"Set weights result for {scope}: success={success}, message={message}")
+        return success, message
 
 
     def _set_weights(self, 
