@@ -12,8 +12,8 @@ services:
     # Defaults: NETUID=368 (testnet), use NETUID=16 for mainnet (finney)
     environment:
       PYTHONUNBUFFERED: "1"
-      NETUID: "${NETUID:-368}"
-      SUBTENSOR_NETWORK: "${SUBTENSOR_NETWORK:-test}"
+      NETUID: "${NETUID:-16}"
+      SUBTENSOR_NETWORK: "${SUBTENSOR_NETWORK:-finney}"
       WALLET_NAME: "${WALLET_NAME:-default}"
       WALLET_HOTKEY: "${WALLET_HOTKEY:-default}"
       LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
