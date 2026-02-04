@@ -238,7 +238,7 @@ class StorageDynamicConfigSource(IDynamicConfigSource):
                     If not provided, will try to get from SUBTENSOR_NETWORK env var.
             cache_ttl: Cache time-to-live in seconds. Defaults to 300 (5 minutes).
         """
-        self.network = network or os.getenv("SUBTENSOR_NETWORK", "").lower()
+        self.network = network or os.getenv("SUBTENSOR_NETWORK", "finney").lower()
         self.base_url = NETWORK_BASE_URLS.get(self.network)
         self.cache_ttl = cache_ttl
         # Cache structure: (config_data, timestamp)

@@ -104,7 +104,7 @@ class StorageCampaignSource(ICampaignSource):
             network: Subtensor network name ("test" or "finney"). 
                     If not provided, will try to get from SUBTENSOR_NETWORK env var.
         """
-        self.network = network or os.getenv("SUBTENSOR_NETWORK", "").lower()
+        self.network = network or os.getenv("SUBTENSOR_NETWORK", "finney").lower()
         self.base_url = NETWORK_BASE_URLS.get(self.network)
     
     def get_campaigns(self) -> List[Campaign]:

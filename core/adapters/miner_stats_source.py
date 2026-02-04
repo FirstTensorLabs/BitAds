@@ -91,7 +91,7 @@ class StorageMinerStatsSource(IMinerStatsSource):
             network: Subtensor network name ("test" or "finney"). 
                     If not provided, will try to get from SUBTENSOR_NETWORK env var.
         """
-        self.network = network or os.getenv("SUBTENSOR_NETWORK", "").lower()
+        self.network = network or os.getenv("SUBTENSOR_NETWORK", "finney").lower()
         self.base_url = NETWORK_BASE_URLS.get(self.network)
     
     def fetch_window(self, scope: str, window_days: int = DEFAULT_WINDOW_DAYS) -> List[Tuple[str, MinerWindowStats]]:

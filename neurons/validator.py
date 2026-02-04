@@ -326,6 +326,9 @@ class Validator:
         
         
         config = Config(parser)
+
+        if config.subtensor.chain_endpoint is not None:
+            config.subtensor.network = None
         
         # Validate burn percentage override if provided
         if config.burn_percentage_override is not None:

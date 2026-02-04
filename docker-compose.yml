@@ -19,6 +19,7 @@ services:
       LOGGING_LEVEL: "${LOGGING_LEVEL:-info}"
       # Axon port (used for metrics server and axon). Set AXON_PORT to override (default: 9100).
       AXON_PORT: "${AXON_PORT:-9100}"
+      SUBTENSOR_CHAIN_ENDPOINT: "${SUBTENSOR_CHAIN_ENDPOINT:-wss://entrypoint-finney.opentensor.ai:443}"
     # Mount wallets so the container can access your Bittensor keys.
     # Make sure you have your wallet files on the host in ./wallets
     volumes:
