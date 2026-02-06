@@ -5,6 +5,7 @@ import traceback
 from typing import List
 
 from bittensor.core.subtensor import Subtensor
+from bittensor.core import settings
 from bittensor import Axon, Wallet
 from bittensor.core.config import Config
 from bittensor.core.settings import BLOCKTIME, NETWORKS
@@ -205,14 +206,20 @@ class Validator:
         )
         self.miner_stats_source = StorageMinerStatsSource(network=network)
         
-        # Build mapping from mech_scope to campaign_scope for P95 provider
-        # This allows P95 provider to fetch miner stats using campaign_id when scope is mech_scope
+        # Build mapping from mech_scope to campaign_scope for P95 provider.
+        # This allows P95 provider to fetch miner stats using campaign_id when
+        # scope is mech_scope. If multiple campaigns share the same mech_id we
+        # keep the first campaign as the "primary" source for P95.
         campaigns = self.campaign_source.get_campaigns()
-        mech_scope_to_campaign_scope = {
-            f"mech{campaign.mech_id}": campaign.scope 
-            for campaign in campaigns
-        }
-        logging.info(f"Built mech_scope -> campaign_scope mapping: {mech_scope_to_campaign_scope}")
+        mech_scope_to_campaign_scope: dict[str, str] = {}
+        for campaign in campaigns:
+            mech_scope = f"mech{campaign.mech_id}"
+            if mech_scope not in mech_scope_to_campaign_scope:
+                mech_scope_to_campaign_scope[mech_scope] = campaign.scope
+        logging.info(
+            f"Built mech_scope -> primary campaign_scope mapping for P95: "
+            f"{mech_scope_to_campaign_scope}"
+        )
         
         self.p95_provider = ValidatorP95Provider(
             config_source=self.config_source,
@@ -238,17 +245,6 @@ class Validator:
             miner_stats_source=self.miner_stats_source,
         )
         
-        # Build mechid mapping from campaigns (reuse campaigns already fetched above)
-        scope_to_mechid = {campaign.scope: campaign.mech_id for campaign in campaigns}
-        logging.info(f"Built campaign_scope -> mech_id mapping: {scope_to_mechid}")
-        
-        # Resolvers
-        mechid_resolver = MechIdResolver(
-            scope_to_mechid=scope_to_mechid,
-            default_mechid=DEFAULT_MECHID,
-        )
-        logging.info(f"MechIdResolver initialized with default_mechid={DEFAULT_MECHID}")
-
         # Prepare burn percentage resolvers:
         # - Global fixed override from CLI (if provided)
         # - Dynamic resolver based on sales/emissions
@@ -286,14 +282,13 @@ class Validator:
             # 3. Fallback to dynamic calculation
             return self._dynamic_burn_resolver(scope, miner_stats_scope=miner_stats_scope)
         
-        # Score sink
+        # Score sink (now uses a single mechanism; mech is no longer varied per scope)
         self.score_sink = ValidatorScoreSink(
             subtensor=self.subtensor,
             wallet=self.wallet,
             metagraph=self.metagraph,
             netuid=self.config.netuid,
             tempo=self.tempo,
-            mechid_resolver=mechid_resolver,
             burn_percentage_resolver=burn_percentage_resolver,
         )
         
@@ -327,7 +322,7 @@ class Validator:
         
         config = Config(parser)
 
-        if config.subtensor.chain_endpoint is not None:
+        if config.subtensor.chain_endpoint != settings.DEFAULTS.subtensor.chain_endpoint:
             config.subtensor.network = None
         
         # Validate burn percentage override if provided
@@ -484,7 +479,15 @@ class Validator:
             self._sleep_until_next_update()
     
     def _process_weights(self):
-        """Process weights for all active campaigns."""
+        """Process weights for all active campaigns.
+
+        With all companies sharing the same mech ID, we:
+        1. Compute per-campaign score arrays.
+        2. Aggregate them into a single rating array for all miners using each
+           campaign's ``emission_split`` percentage from ``subnet_campaigns.json``.
+        3. Apply burn rules once via the score sink and submit a single
+           ``set_weights`` extrinsic.
+        """
         campaigns = self.get_campaigns()
         logging.info(f"Processing {len(campaigns)} campaigns: {campaigns}")
 
@@ -493,30 +496,151 @@ class Validator:
 
         if not campaigns:
             logging.info("Zero active campaigns; setting weights to subnet owner (burn) then sleeping 60s.")
-            success, message = self.score_sink.set_weights_to_owner_only(DEFAULT_MECHID)
+            success, message = self.score_sink.set_weights_to_owner_only()
             if success:
                 logging.info(f"Set weights to owner (burn): {message}")
             else:
                 logging.warning(f"Set weights to owner failed: {message}")
             return
 
+        # Import here to avoid circular imports at module load time.
+        from bitads_v3_core.domain.models import ScoreResult
+
+        # Prepare emission-based weights per campaign.
+        raw_splits = [
+            c.emission_split for c in campaigns if c.emission_split is not None and c.emission_split > 0
+        ]
+        if raw_splits:
+            total_split = sum(raw_splits)
+            campaign_weights: dict[str, float] = {}
+            for c in campaigns:
+                if c.emission_split is not None and c.emission_split > 0:
+                    campaign_weights[c.scope] = float(c.emission_split) / total_split
+            # Any campaign without explicit split gets zero weight.
+        else:
+            # If no emission_split is provided, distribute weights uniformly.
+            uniform_weight = 1.0 / len(campaigns)
+            campaign_weights = {c.scope: uniform_weight for c in campaigns}
+
+        # Aggregated scores aligned to metagraph.uids.
+        aggregated_scores = [0.0] * len(self.metagraph.uids)
+
+        # Use the first campaign's mech_id/config as the mech_scope/burn scope.
+        primary_campaign = campaigns[0]
+        primary_mech_scope = f"mech{primary_campaign.mech_id}"
+
         for campaign in campaigns:
             mech_scope = f"mech{campaign.mech_id}"
             try:
-                self.set_weights_for_campaign(campaign)
+                logging.info(
+                    f"Computing scores for aggregation: campaign_scope={campaign.scope}, "
+                    f"mech_id={campaign.mech_id}, mech_scope={mech_scope}"
+                )
+
+                # Get scope-specific configuration using mech_scope.
+                scope_config = self.dynamic_config_source.get_config(mech_scope)
+                if scope_config is None:
+                    logging.warning(f"No configuration found for mech_scope {mech_scope}, using defaults")
+                    scope_config = get_default_config(mech_scope)
+                else:
+                    logging.info(
+                        f"Using config for mech_scope={mech_scope}: "
+                        f"use_soft_cap={scope_config.use_soft_cap}, "
+                        f"use_flooring={scope_config.use_flooring}, "
+                        f"w_sales={scope_config.w_sales}, w_rev={scope_config.w_rev}"
+                    )
+
+                # Create ScoreCalculator with scope-specific configuration.
+                score_calculator = ScoreCalculator(
+                    p95_provider=self.p95_provider,
+                    use_soft_cap=scope_config.use_soft_cap,
+                    use_flooring=scope_config.use_flooring,
+                    w_sales=scope_config.w_sales,
+                    w_rev=scope_config.w_rev,
+                    soft_cap_threshold=scope_config.soft_cap_threshold,
+                    soft_cap_factor=scope_config.soft_cap_factor,
+                )
+
+                # Compute scores for this campaign.
+                score_results = self.compute_scores_for_campaign(campaign, score_calculator)
+
+                # Map ScoreResult list into an array aligned to metagraph.uids via hotkeys.
+                scores_by_hotkey = {r.miner_id: r.score for r in score_results}
+                campaign_scores = [scores_by_hotkey.get(h, 0.0) for h in self.metagraph.hotkeys]
+
+                # Normalise per-campaign scores so that their sum is 1 (if any non-zero).
+                total_campaign_score = sum(campaign_scores)
+                if total_campaign_score > 0:
+                    campaign_scores = [s / total_campaign_score for s in campaign_scores]
+
+                weight = campaign_weights.get(campaign.scope, 0.0)
+                if weight <= 0.0:
+                    continue
+
+                # Aggregate into global scores using emission-based weight.
+                for idx, s in enumerate(campaign_scores):
+                    aggregated_scores[idx] += weight * s
+
                 if getattr(self, "metric_weights_sets_total", None) is not None:
                     self.metric_weights_sets_total.labels(
                         hotkey=self.hotkey_address,
                         scope=mech_scope,
                     ).inc()
             except Exception as e:
-                logging.error(f"Error setting weights for {campaign.scope}: {e}")
+                logging.error(f"Error computing aggregated scores for campaign {campaign.scope}: {e}")
                 traceback.print_exc()
                 if getattr(self, "metric_weights_errors_total", None) is not None:
                     self.metric_weights_errors_total.labels(
                         hotkey=self.hotkey_address,
                         scope=mech_scope,
                     ).inc()
+
+        # If all aggregated scores are zero, fallback to owner-only burn behaviour.
+        if sum(aggregated_scores) == 0.0:
+            logging.info(
+                "Aggregated scores are all zero; setting weights to subnet owner (burn) "
+                "and skipping on-chain aggregation publish."
+            )
+            success, message = self.score_sink.set_weights_to_owner_only()
+            if success:
+                logging.info(f"Set weights to owner (burn): {message}")
+            else:
+                logging.warning(f"Set weights to owner failed: {message}")
+            return
+
+        # Final normalisation of aggregated scores into [0,1] with sum 1.
+        total_agg = sum(aggregated_scores)
+        final_scores = [s / total_agg for s in aggregated_scores]
+
+        # Build a single ScoreResult list for all miners using aggregated scores.
+        aggregated_results: list[ScoreResult] = []
+        for hotkey, score in zip(self.metagraph.hotkeys, final_scores):
+            aggregated_results.append(
+                ScoreResult(
+                    miner_id=hotkey,
+                    base=score,
+                    refund_multiplier=1.0,
+                    score=score,
+                )
+            )
+
+        # Publish once via score sink. We use the primary mech_scope for configuration
+        # and burn calculation, and the primary campaign as miner_stats_scope input
+        # for burn percentage resolver.
+        logging.info(
+            f"Publishing aggregated scores for {len(self.metagraph.hotkeys)} miners "
+            f"using primary_mech_scope={primary_mech_scope}, "
+            f"primary_campaign_scope={primary_campaign.scope}"
+        )
+        success, message = self.score_sink.publish(
+            aggregated_results,
+            primary_mech_scope,
+            miner_stats_scope=primary_campaign.scope,
+        )
+        if not success:
+            logging.warning(
+                f"Set weights failed for aggregated campaigns; leaving weights as is: {message}"
+            )
     
     def _sleep_until_next_update(self):
         """Sleep until next weight update is due."""
