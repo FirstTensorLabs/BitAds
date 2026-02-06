@@ -122,12 +122,12 @@ class StorageMinerStatsSource(IMinerStatsSource):
             miners_data = response.json()
             
             # Ensure it's a list
-            if not isinstance(miners_data, list):
+            if not isinstance(miners_data["rows"], list):
                 logging.warning(f"StorageMinerStatsSource: expected array for scope {scope}, got {type(miners_data)}")
                 return []
             
             results = []
-            for miner_data in miners_data:
+            for miner_data in miners_data["rows"]:
                 miner_id = miner_data.get("miner_id")
                 sales = miner_data.get("sales", 0)
                 revenue_usd = miner_data.get("revenue_usd", 0.0)

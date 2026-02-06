@@ -24,7 +24,6 @@ class ValidatorScoreSink(IScoreSink):
         metagraph: bt.Metagraph,
         netuid: int,
         tempo: int,
-        mechid_resolver: Callable[[str], int],
         burn_percentage_resolver: Optional[Callable[[str], Optional[float]]] = None,
     ):
         self.subtensor = subtensor
@@ -32,8 +31,9 @@ class ValidatorScoreSink(IScoreSink):
         self.metagraph = metagraph
         self.netuid = netuid
         self.tempo = tempo
-        self.mechid_resolver = mechid_resolver
-        self.burn_percentage_resolver = burn_percentage_resolver  # Callable that takes scope and returns burn percentage (None means no burn, 0.0-100.0 for burn percentage)
+        # Callable that takes scope and returns burn percentage
+        # (None means no burn, 0.0-100.0 for burn percentage)
+        self.burn_percentage_resolver = burn_percentage_resolver
 
     def _get_owner_uid(self) -> Optional[int]:
         """
@@ -78,7 +78,7 @@ class ValidatorScoreSink(IScoreSink):
         if owner_index is not None:
             weights[owner_index] = 1.0
 
-    def set_weights_to_owner_only(self, mechid: int = 0) -> Tuple[bool, str]:
+    def set_weights_to_owner_only(self) -> Tuple[bool, str]:
         """
         Set weights to subnet owner only (burn behaviour). Used when there are no
         campaigns or when normal weight setting fails.
@@ -95,13 +95,12 @@ class ValidatorScoreSink(IScoreSink):
             return False, "Owner UID not found"
         weights = [0.0] * len(self.metagraph.uids)
         weights[owner_index] = 1.0
-        logging.info(f"Setting weights to subnet owner only (burn behaviour), mechid={mechid}")
+        logging.info("Setting weights to subnet owner only (burn behaviour)")
         return self._set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
             uids=self.metagraph.uids,
             weights=weights,
-            mechid=mechid,
             wait_for_inclusion=True,
         )
 
@@ -121,13 +120,12 @@ class ValidatorScoreSink(IScoreSink):
         Returns:
             (success, message) from the set_weights extrinsic.
         """
-        mechid = self.mechid_resolver(scope)
-        logging.info(f"Publishing {len(scores)} scores for scope: {scope} (mechid={mechid})")
+        logging.info(f"Publishing {len(scores)} scores for scope: {scope}")
 
         # Empty score list: use burn (set weights to subnet owner only)
         if not scores or all(score.score == 0.0 for score in scores):
             logging.info(f"Empty score results for scope {scope}; using burn (set weights to subnet owner).")
-            return self.set_weights_to_owner_only(mechid)
+            return self.set_weights_to_owner_only()
 
         # Build UID->score map
         # miner_id is a hotkey string, need to find corresponding UID
@@ -201,13 +199,12 @@ class ValidatorScoreSink(IScoreSink):
             # No burn: use weights_before_burn
             weights = weights_before_burn
         
-        logging.info(f"[blue]Setting weights for {scope} (mechid={mechid}):[/blue] {weights}")
+        logging.info(f"[blue]Setting weights for {scope}:[/blue] {weights}")
         success, message = self._set_weights(
             wallet=self.wallet,
             netuid=self.netuid,
             uids=self.metagraph.uids,
             weights=weights,
-            mechid=mechid,
             wait_for_inclusion=True,
         )
         logging.info(f"Set weights result for {scope}: success={success}, message={message}")

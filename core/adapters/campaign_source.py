@@ -63,14 +63,24 @@ class ValidatorCampaignSource(ICampaignSource):
                 # Map campaign_id from API to scope for Campaign model
                 campaign_id = campaign_data.get("campaign_id")
                 mech_id = campaign_data.get("mech_id")
+                emission_split = campaign_data.get("emission_split")
                 status = campaign_data.get("status", 1)  # Default to 1 (active) if not specified
                 
                 logging.debug(f"Campaign from API: campaign_id={campaign_id}, mech_id={mech_id}, status={status}")
                 
                 # Only include campaigns with status = 1 (active)
                 if campaign_id is not None and mech_id is not None and status == 1:
-                    campaigns.append(Campaign(scope=campaign_id, mech_id=mech_id))
-                    logging.info(f"✓ Added active campaign: campaign_id={campaign_id}, mech_id={mech_id}, mech_scope=mech{mech_id}")
+                    campaigns.append(
+                        Campaign(
+                            scope=campaign_id,
+                            mech_id=mech_id,
+                            emission_split=emission_split,
+                        )
+                    )
+                    logging.info(
+                        f"✓ Added active campaign: campaign_id={campaign_id}, mech_id={mech_id}, "
+                        f"emission_split={emission_split}, mech_scope=mech{mech_id}"
+                    )
                 elif campaign_id is not None:
                     logging.info(f"✗ Skipped inactive campaign: campaign_id={campaign_id}, mech_id={mech_id}, status={status}")
             
@@ -135,14 +145,24 @@ class StorageCampaignSource(ICampaignSource):
             for index, campaign_data in enumerate(campaigns_data):
                 campaign_id = campaign_data.get("campaign_id")
                 mech_id = campaign_data.get("mech_id")
+                emission_split = campaign_data.get("emission_split")
                 status = campaign_data.get("status", 1)  # Default to 1 (active) if not specified
                 
                 logging.debug(f"Campaign from storage: campaign_id={campaign_id}, mech_id={mech_id}, status={status}")
                 
                 # Only include campaigns with status = 1 (active)
                 if campaign_id is not None and status == 1:
-                    campaigns.append(Campaign(scope=campaign_id, mech_id=mech_id))
-                    logging.info(f"✓ Added active campaign: campaign_id={campaign_id}, mech_id={mech_id}, mech_scope=mech{mech_id}")
+                    campaigns.append(
+                        Campaign(
+                            scope=campaign_id,
+                            mech_id=mech_id,
+                            emission_split=emission_split,
+                        )
+                    )
+                    logging.info(
+                        f"✓ Added active campaign: campaign_id={campaign_id}, mech_id={mech_id}, "
+                        f"emission_split={emission_split}, mech_scope=mech{mech_id}"
+                    )
                 elif campaign_id is not None:
                     logging.info(f"✗ Skipped inactive campaign: campaign_id={campaign_id}, mech_id={mech_id}, status={status}")
             
