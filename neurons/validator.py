@@ -12,6 +12,7 @@ from bittensor.core.settings import BLOCKTIME, NETWORKS
 from bittensor.utils.btlogging import logging
 
 from bitads_v3_core.app.scoring import ScoreCalculator
+from bitads_v3_core.domain.creator_burn import apply_creator_burn
 from bitads_v3_core.domain.models import ScoreResult
 
 from core import __version__, version_as_int
@@ -281,6 +282,8 @@ class Validator:
 
             # 3. Fallback to dynamic calculation
             return self._dynamic_burn_resolver(scope, miner_stats_scope=miner_stats_scope)
+
+        self.burn_percentage_resolver = burn_percentage_resolver
         
         # Score sink (now uses a single mechanism; mech is no longer varied per scope)
         self.score_sink = ValidatorScoreSink(
@@ -503,9 +506,6 @@ class Validator:
                 logging.warning(f"Set weights to owner failed: {message}")
             return
 
-        # Import here to avoid circular imports at module load time.
-        from bitads_v3_core.domain.models import ScoreResult
-
         # Prepare emission-based weights per campaign.
         raw_splits = [
             c.emission_split for c in campaigns if c.emission_split is not None and c.emission_split > 0
@@ -564,22 +564,77 @@ class Validator:
                 # Compute scores for this campaign.
                 score_results = self.compute_scores_for_campaign(campaign, score_calculator)
 
-                # Map ScoreResult list into an array aligned to metagraph.uids via hotkeys.
-                scores_by_hotkey = {r.miner_id: r.score for r in score_results}
-                campaign_scores = [scores_by_hotkey.get(h, 0.0) for h in self.metagraph.hotkeys]
+                # Build UID->score map (miner_id is hotkey).
+                uids = list(self.metagraph.uids)
+                scores_by_uid: dict[int, float] = {}
+                for result in score_results:
+                    if result.miner_id not in self.metagraph.hotkeys:
+                        continue
+                    hotkey_index = self.metagraph.hotkeys.index(result.miner_id)
+                    if hotkey_index < len(self.metagraph.uids):
+                        uid = self.metagraph.uids[hotkey_index]
+                        scores_by_uid[uid] = result.score
+                miner_scores = [scores_by_uid.get(uid, 0.0) for uid in uids]
 
-                # Normalise per-campaign scores so that their sum is 1 (if any non-zero).
-                total_campaign_score = sum(campaign_scores)
-                if total_campaign_score > 0:
-                    campaign_scores = [s / total_campaign_score for s in campaign_scores]
+                # Apply this campaign's burn_percentage (per mechanism/company config).
+                burn_percentage = None
+                if self.burn_percentage_resolver is not None:
+                    burn_percentage = self.burn_percentage_resolver(
+                        mech_scope, miner_stats_scope=campaign.scope
+                    )
+                creator_uid = self.score_sink._get_owner_uid()
 
-                weight = campaign_weights.get(campaign.scope, 0.0)
-                if weight <= 0.0:
+                if burn_percentage is not None and burn_percentage > 0.0:
+                    try:
+                        final_uids, final_weights = apply_creator_burn(
+                            uids=uids,
+                            miner_scores=miner_scores,
+                            creator_uid=creator_uid,
+                            burn_percentage=burn_percentage,
+                        )
+                        weights_dict = dict(zip(final_uids, final_weights))
+                        campaign_weights_vec = [
+                            weights_dict.get(uid, 0.0) for uid in self.metagraph.uids
+                        ]
+                        if sum(campaign_weights_vec) == 0.0:
+                            owner_index = self.score_sink._get_owner_index()
+                            if owner_index is not None:
+                                campaign_weights_vec = [0.0] * len(uids)
+                                campaign_weights_vec[owner_index] = 1.0
+                        logging.info(
+                            f"Applied burn {burn_percentage}% for campaign {campaign.scope} (mech_scope={mech_scope})"
+                        )
+                    except Exception as e:
+                        logging.warning(
+                            f"Failed to apply creator burn for campaign {campaign.scope}: {e}, using normalized scores"
+                        )
+                        total = sum(miner_scores)
+                        campaign_weights_vec = (
+                            [s / total for s in miner_scores]
+                            if total > 0
+                            else [0.0] * len(uids)
+                        )
+                        if total <= 0:
+                            owner_index = self.score_sink._get_owner_index()
+                            if owner_index is not None:
+                                campaign_weights_vec[owner_index] = 1.0
+                else:
+                    total = sum(miner_scores)
+                    if total > 0:
+                        campaign_weights_vec = [s / total for s in miner_scores]
+                    else:
+                        campaign_weights_vec = [0.0] * len(uids)
+                        owner_index = self.score_sink._get_owner_index()
+                        if owner_index is not None:
+                            campaign_weights_vec[owner_index] = 1.0
+
+                emission_weight = campaign_weights.get(campaign.scope, 0.0)
+                if emission_weight <= 0.0:
                     continue
 
                 # Aggregate into global scores using emission-based weight.
-                for idx, s in enumerate(campaign_scores):
-                    aggregated_scores[idx] += weight * s
+                for idx, w in enumerate(campaign_weights_vec):
+                    aggregated_scores[idx] += emission_weight * w
 
                 if getattr(self, "metric_weights_sets_total", None) is not None:
                     self.metric_weights_sets_total.labels(
@@ -636,6 +691,7 @@ class Validator:
             aggregated_results,
             primary_mech_scope,
             miner_stats_scope=primary_campaign.scope,
+            apply_burn=False,
         )
         if not success:
             logging.warning(
