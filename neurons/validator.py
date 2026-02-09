@@ -27,6 +27,7 @@ from core.constants import (
 )
 from core.adapters.config_source import ValidatorConfigSource
 from core.adapters.miner_stats_source import ValidatorMinerStatsSource, StorageMinerStatsSource
+from core.adapters.pending_miners_source import StoragePendingMinersSource
 from core.adapters.p95_provider import ValidatorP95Provider
 from core.adapters.score_sink import ValidatorScoreSink
 from core.adapters.burn_data_source import ValidatorBurnDataSource
@@ -35,7 +36,7 @@ from core.adapters.campaign_source import ValidatorCampaignSource, StorageCampai
 from core.bittensor_factory import BittensorFactory
 from core.resolvers import MechIdResolver, BurnPercentageResolver, FixedBurnPercentageResolver, WindowDaysGetter
 from core.domain.campaign import Campaign
-from core.constants import DEFAULT_MECHID
+from core.constants import DEFAULT_MECHID, PENDING_MINER_MIN_SCORE
 
 try:
     # Optional Prometheus support for metrics exporting.
@@ -206,7 +207,8 @@ class Validator:
             dynamic_config_source=self.dynamic_config_source
         )
         self.miner_stats_source = StorageMinerStatsSource(network=network)
-        
+        self.pending_miners_source = StoragePendingMinersSource(network=network)
+
         # Build mapping from mech_scope to campaign_scope for P95 provider.
         # This allows P95 provider to fetch miner stats using campaign_id when
         # scope is mech_scope. If multiple campaigns share the same mech_id we
@@ -385,9 +387,28 @@ class Validator:
         
         if not miner_stats_list:
             logging.warning(f"No miner stats found for campaign {campaign.scope}, using zero scores")
-            # Produce zero scores for all hotkeys (miners with no work get 0)
-            return [ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0) for hotkey in self.metagraph.hotkeys]
-        
+            # Start with zero for all; pending-only miners get minimum score
+            score_results = [
+                ScoreResult(miner_id=hotkey, base=0.0, refund_multiplier=1.0, score=0.0)
+                for hotkey in self.metagraph.hotkeys
+            ]
+            pending_miners = self.pending_miners_source.get_pending_miners(campaign.scope)
+            for hotkey in pending_miners:
+                if hotkey in self.metagraph.hotkeys:
+                    idx = self.metagraph.hotkeys.index(hotkey)
+                    score_results[idx] = ScoreResult(
+                        miner_id=hotkey,
+                        base=PENDING_MINER_MIN_SCORE,
+                        refund_multiplier=1.0,
+                        score=PENDING_MINER_MIN_SCORE,
+                    )
+            if pending_miners:
+                logging.info(
+                    f"Assigned minimum score ({PENDING_MINER_MIN_SCORE}) to "
+                    f"{len(pending_miners)} pending-only miners for campaign {campaign.scope} (no miner-stats)"
+                )
+            return score_results
+
         logging.info(f"Fetched {len(miner_stats_list)} miner stats for campaign_scope={campaign.scope}, computing scores with mech_scope={mech_scope}")
         
         # Cache miner stats in P95 provider to avoid duplicate fetch in AUTO mode
@@ -397,6 +418,28 @@ class Validator:
         # P95 provider will use cached miner stats if needed (AUTO mode)
         score_results = score_calculator.score_many(miner_stats_list, mech_scope)
         logging.info(f"Computed {len(score_results)} scores for mech_scope={mech_scope}")
+
+        # Miners with only pending orders (not in miner-stats) get minimum reward
+        # so they are not removed from the subnet. A miner is either on the pending
+        # list or in miner-stats for this campaign, not both.
+        miners_with_score = {r.miner_id for r in score_results}
+        pending_miners = self.pending_miners_source.get_pending_miners(campaign.scope)
+        for hotkey in pending_miners:
+            if hotkey not in miners_with_score and hotkey in self.metagraph.hotkeys:
+                score_results.append(
+                    ScoreResult(
+                        miner_id=hotkey,
+                        base=PENDING_MINER_MIN_SCORE,
+                        refund_multiplier=1.0,
+                        score=PENDING_MINER_MIN_SCORE,
+                    )
+                )
+                miners_with_score.add(hotkey)
+        if pending_miners and len(score_results) > len(miner_stats_list):
+            logging.info(
+                f"Added minimum score ({PENDING_MINER_MIN_SCORE}) for "
+                f"{len(score_results) - len(miner_stats_list)} pending-only miners in campaign {campaign.scope}"
+            )
         
         # Clear miner stats cache for this campaign after processing is complete
         # This ensures we fetch fresh stats on the next iteration

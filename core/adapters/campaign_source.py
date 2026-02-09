@@ -163,18 +163,3 @@ class StorageCampaignSource(ICampaignSource):
                         f"✓ Added active campaign: campaign_id={campaign_id}, mech_id={mech_id}, "
                         f"emission_split={emission_split}, mech_scope=mech{mech_id}"
                     )
-                elif campaign_id is not None:
-                    logging.info(f"✗ Skipped inactive campaign: campaign_id={campaign_id}, mech_id={mech_id}, status={status}")
-            
-            logging.info(f"Fetched {len(campaigns)} active campaigns from storage (status=1)")
-            if campaigns:
-                logging.info(f"Active campaigns mapping: {[(c.scope, c.mech_id, f'mech{c.mech_id}') for c in campaigns]}")
-            return campaigns
-            
-        except requests.exceptions.RequestException as e:
-            logging.warning(f"Failed to fetch campaigns from storage: {e}")
-            return []
-        except (ValueError, KeyError, TypeError) as e:
-            logging.warning(f"Failed to parse campaigns storage response: {e}")
-            return []
-
