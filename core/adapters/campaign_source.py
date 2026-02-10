@@ -177,4 +177,3 @@ class StorageCampaignSource(ICampaignSource):
         except (ValueError, KeyError, TypeError) as e:
             logging.warning(f"Failed to parse campaigns storage response: {e}")
             return []
-

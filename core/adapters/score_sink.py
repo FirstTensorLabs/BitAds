@@ -82,10 +82,7 @@ class ValidatorScoreSink(IScoreSink):
         """
         Set weights to subnet owner only (burn behaviour). Used when there are no
         campaigns or when normal weight setting fails.
-        
-        Args:
-            mechid: Mechanism ID for the weight set (use DEFAULT_MECHID when no campaigns).
-        
+
         Returns:
             (success, message) from the set_weights extrinsic.
         """
@@ -104,23 +101,30 @@ class ValidatorScoreSink(IScoreSink):
             wait_for_inclusion=True,
         )
 
-    def publish(self, scores: List[ScoreResult], scope: str, miner_stats_scope: str = None) -> Tuple[bool, str]:
+    def publish(
+        self,
+        scores: List[ScoreResult],
+        scope: str,
+        miner_stats_scope: str = None,
+        apply_burn: bool = True,
+    ) -> Tuple[bool, str]:
         """
         Publish score results by setting weights on-chain for the given scope.
         Assumes miner_id is a hotkey string; maps hotkeys to UIDs via metagraph.
         Miners not in scores get 0.0 (no work = no score).
-        Applies creator burn if burn_percentage is set.
+        Applies creator burn if burn_percentage is set and apply_burn is True.
         
         Args:
-            scores: List of score results
+            scores: List of score results (or pre-burned final weights when apply_burn=False)
             scope: Scope identifier for config (e.g., "mech0", "mech1")
             miner_stats_scope: Scope identifier for fetching miner stats (e.g., campaign_id).
                               If not provided, uses scope.
+            apply_burn: If False, scores are treated as final weights and no burn is applied.
         
         Returns:
             (success, message) from the set_weights extrinsic.
         """
-        logging.info(f"Publishing {len(scores)} scores for scope: {scope}")
+        logging.info(f"Publishing {len(scores)} scores for scope: {scope} (apply_burn={apply_burn})")
 
         # Empty score list: use burn (set weights to subnet owner only)
         if not scores or all(score.score == 0.0 for score in scores):
@@ -150,6 +154,25 @@ class ValidatorScoreSink(IScoreSink):
         # Miners not in scores get 0.0 (no work = no score)
         uids = list(self.metagraph.uids)
         miner_scores = [scores_by_uid.get(uid, 0.0) for uid in uids]
+        
+        # When apply_burn=False, caller has already applied per-campaign burn; use scores as final weights.
+        if not apply_burn:
+            total = sum(miner_scores)
+            if total > 0:
+                weights = [s / total for s in miner_scores]
+            else:
+                weights = [0.0] * len(uids)
+                self._set_owner_weight_fallback(weights)
+            logging.info(f"[blue]Setting weights for {scope} (pre-burned, no burn applied):[/blue] {weights}")
+            success, message = self._set_weights(
+                wallet=self.wallet,
+                netuid=self.netuid,
+                uids=self.metagraph.uids,
+                weights=weights,
+                wait_for_inclusion=True,
+            )
+            logging.info(f"Set weights result for {scope}: success={success}, message={message}")
+            return success, message
         
         # Get burn percentage for this scope (if resolver is provided)
         burn_percentage = None

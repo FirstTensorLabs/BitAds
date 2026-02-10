@@ -42,3 +42,7 @@ DEFAULT_SALES_EMISSION_RATIO = 1.0  # 1:1 ratio (miners earn what they generate)
 
 # Resolver defaults
 DEFAULT_MECHID = 0  # Default mechanism ID if scope not found
+
+# Minimum score for pending miners (only pending orders, not in miner-stats)
+# so they receive a small weight and are not removed from the subnet
+PENDING_MINER_MIN_SCORE = 0.0001
