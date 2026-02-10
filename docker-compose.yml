@@ -35,7 +35,7 @@ services:
       start_period: 10s
 
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower
     container_name: watchtower
     restart: unless-stopped
     volumes:
