@@ -67,10 +67,29 @@ class ValidatorScoreSink(IScoreSink):
             logging.warning(f"Failed to get owner index: {e}")
         return None
 
+    # Decimal places for on-chain weights to avoid float noise (e.g. 0.00010000000000000002).
+    _WEIGHTS_DECIMALS = 8
+
+    def _round_weights(self, weights: List[float]) -> List[float]:
+        """
+        Round weights to a fixed precision and ensure they sum to 1.0.
+        Avoids floating-point display noise (e.g. 0.00010000000000000002).
+        """
+        rounded = [round(w, self._WEIGHTS_DECIMALS) for w in weights]
+        total = sum(rounded)
+        if total <= 0:
+            return rounded
+        diff = 1.0 - total
+        if diff != 0.0:
+            # Add the difference to the index with the largest weight so sum is 1.0.
+            idx_max = max(range(len(rounded)), key=lambda i: rounded[i])
+            rounded[idx_max] = round(rounded[idx_max] + diff, self._WEIGHTS_DECIMALS)
+        return rounded
+
     def _set_owner_weight_fallback(self, weights: List[float]) -> None:
         """
         Set the subnet owner's weight to 1.0 as fallback when all scores are zero.
-        
+
         Args:
             weights: List of weights aligned to metagraph.uids (modified in place)
         """
@@ -92,6 +111,7 @@ class ValidatorScoreSink(IScoreSink):
             return False, "Owner UID not found"
         weights = [0.0] * len(self.metagraph.uids)
         weights[owner_index] = 1.0
+        weights = self._round_weights(weights)
         logging.info("Setting weights to subnet owner only (burn behaviour)")
         return self._set_weights(
             wallet=self.wallet,
@@ -163,6 +183,7 @@ class ValidatorScoreSink(IScoreSink):
             else:
                 weights = [0.0] * len(uids)
                 self._set_owner_weight_fallback(weights)
+            weights = self._round_weights(weights)
             logging.info(f"[blue]Setting weights for {scope} (pre-burned, no burn applied):[/blue] {weights}")
             success, message = self._set_weights(
                 wallet=self.wallet,
@@ -221,7 +242,8 @@ class ValidatorScoreSink(IScoreSink):
         else:
             # No burn: use weights_before_burn
             weights = weights_before_burn
-        
+
+        weights = self._round_weights(weights)
         logging.info(f"[blue]Setting weights for {scope}:[/blue] {weights}")
         success, message = self._set_weights(
             wallet=self.wallet,

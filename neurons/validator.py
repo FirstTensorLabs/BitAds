@@ -567,6 +567,8 @@ class Validator:
 
         # Aggregated scores aligned to metagraph.uids.
         aggregated_scores = [0.0] * len(self.metagraph.uids)
+        # Miners who received the pending minimum in at least one campaign; leave their final weight as-is (no re-normalization).
+        pending_min_indices: set[int] = set()
 
         # Use the first campaign's mech_id/config as the mech_scope/burn scope.
         primary_campaign = campaigns[0]
@@ -606,6 +608,16 @@ class Validator:
 
                 # Compute scores for this campaign.
                 score_results = self.compute_scores_for_campaign(campaign, score_calculator)
+
+                # Track miners that got the pending minimum so we leave their final weight as-is.
+                pending_miners_this = self.pending_miners_source.get_pending_miners(campaign.scope)
+                for r in score_results:
+                    if (
+                        r.score == PENDING_MINER_MIN_SCORE
+                        and r.miner_id in pending_miners_this
+                        and r.miner_id in self.metagraph.hotkeys
+                    ):
+                        pending_min_indices.add(self.metagraph.hotkeys.index(r.miner_id))
 
                 # Build UID->score map (miner_id is hotkey).
                 uids = list(self.metagraph.uids)
@@ -707,8 +719,31 @@ class Validator:
             return
 
         # Final normalisation of aggregated scores into [0,1] with sum 1.
+        # Leave pending-minimum rating as-is for miners that received it; do not re-calculate / dilute it.
         total_agg = sum(aggregated_scores)
-        final_scores = [s / total_agg for s in aggregated_scores]
+        if total_agg <= 0:
+            final_scores = [0.0] * len(aggregated_scores)
+        else:
+            final_scores = [s / total_agg for s in aggregated_scores]
+            if pending_min_indices:
+                # Give pending-min miners exactly PENDING_MINER_MIN_SCORE; distribute the rest to others.
+                n_pending = len(pending_min_indices)
+                remaining = 1.0 - n_pending * PENDING_MINER_MIN_SCORE
+                if remaining < 0.0:
+                    remaining = 0.0
+                other_indices = [i for i in range(len(aggregated_scores)) if i not in pending_min_indices]
+                sum_other = sum(aggregated_scores[i] for i in other_indices)
+                for i in pending_min_indices:
+                    final_scores[i] = PENDING_MINER_MIN_SCORE
+                if sum_other > 0 and remaining > 0:
+                    for i in other_indices:
+                        final_scores[i] = remaining * (aggregated_scores[i] / sum_other)
+                elif sum_other <= 0 and other_indices:
+                    for i in other_indices:
+                        final_scores[i] = remaining / len(other_indices)
+                logging.info(
+                    f"Left minimum rating as-is ({PENDING_MINER_MIN_SCORE}) for {n_pending} pending-only miner(s)"
+                )
 
         # Build a single ScoreResult list for all miners using aggregated scores.
         aggregated_results: list[ScoreResult] = []
